@@ -12,9 +12,31 @@
   <img src="https://img.shields.io/badge/License-MIT-1F2937?style=for-the-badge" alt="MIT License" />
 </p>
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Demo Preview](#demo-preview)
+- [Core Capabilities](#core-capabilities)
+- [Interface Preview](#interface-preview)
+- [Architecture](#architecture)
+- [Technology Stack](#technology-stack)
+- [Getting Started](#getting-started)
+- [Project Structure](#project-structure)
+- [AI Security Copilot](#ai-security-copilot)
+- [PDF Reporting](#pdf-reporting)
+- [Roadmap / Future Improvements](#roadmap--future-improvements)
+- [Operational Notes](#operational-notes)
+- [License](#license)
+
 ## Overview
 
 NetSecure Pro is a Python desktop application designed to centralize the essential tasks of local network supervision and basic security assessment. From a single interface, an administrator can discover active hosts, inspect open services, monitor traffic, review alerts, calculate a network security score, generate professional PDF reports, and query an AI copilot for remediation guidance.
+
+## Demo Preview
+
+<p align="center">
+  <img src="assets/screenshots/demo.gif" alt="NetSecure Pro demo preview" width="920" />
+</p>
 
 ## Core Capabilities
 
@@ -152,6 +174,15 @@ The built-in reporting engine generates a professional PDF document that summari
 - exposed services
 - recent alerts
 - security posture and recommendations
+
+## Roadmap / Future Improvements
+
+- Add richer anomaly detection workflows with AI-assisted prioritization
+- Improve service fingerprinting and host classification accuracy
+- Expand report export options with richer visual summaries and charts
+- Introduce comparison between historical scans and current posture
+- Add stronger multi-user administration and permission controls
+- Extend topology and asset relationships with smarter grouping and context
 
 ## Operational Notes
 
