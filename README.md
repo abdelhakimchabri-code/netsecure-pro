@@ -1,81 +1,117 @@
-# NetSecure Pro
+﻿<h1 align="center">NetSecure Pro</h1>
 
-NetSecure Pro is a Python desktop application for local network supervision, security analysis, and reporting. It helps administrators discover connected hosts, inspect exposed services, monitor traffic, review alerts, calculate a security score, and generate professional PDF reports from a single interface.
+<p align="center">
+  Intelligent desktop application for local network supervision, security analysis, reporting, and AI-assisted operational guidance.
+</p>
 
-## Features
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+" />
+  <img src="https://img.shields.io/badge/PyQt6-Desktop_UI-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PyQt6" />
+  <img src="https://img.shields.io/badge/SQLite-Local_Database-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" />
+  <img src="https://img.shields.io/badge/OpenRouter-AI_Assistant-0F766E?style=for-the-badge" alt="OpenRouter AI Assistant" />
+  <img src="https://img.shields.io/badge/License-MIT-1F2937?style=for-the-badge" alt="MIT License" />
+</p>
 
-- Local authentication with SQLite
-- Network discovery with `Ping`, `ARP`, and TCP fallback
-- Host enrichment with IP, MAC, hostname, vendor, device type, and OS guess
-- Multi-mode TCP port analysis with basic banner grabbing
-- Real-time network monitoring and traffic indicators
-- Alerting and rule-based security scoring
-- Network topology view
-- Scan history, event log, and CSV export
-- PDF report generation
-- OpenRouter-powered AI assistant
+## Overview
 
-## Screenshots
+NetSecure Pro is a Python desktop application designed to centralize the essential tasks of local network supervision and basic security assessment. From a single interface, an administrator can discover active hosts, inspect open services, monitor traffic, review alerts, calculate a network security score, generate professional PDF reports, and query an AI copilot for remediation guidance.
 
-### Dashboard
+## Core Capabilities
 
-![NetSecure Pro Dashboard](assets/screenshots/dashboard.png)
+### Network Discovery
 
-### Network Scan
+- Discover active hosts through `Ping`, `ARP`, and TCP fallback methods
+- Enrich hosts with IP, MAC address, hostname, vendor, device type, and OS guess
+- Filter and search discovered assets directly from the interface
 
-![NetSecure Pro Network Scan](assets/screenshots/network-scan.png)
+### Port and Service Analysis
 
-### Port Analysis
+- Run multi-mode TCP scans (`Quick`, `Common`, `Extended`, `Custom`)
+- Detect exposed services and classify their risk level
+- Capture basic service banners for better context during analysis
 
-![NetSecure Pro Port Analysis](assets/screenshots/port-analysis.png)
+### Monitoring and Security Analysis
 
-### Live Monitoring
+- Track live bandwidth and interface activity
+- Generate alerts from operational and security signals
+- Produce a rule-based security score with observations and recommendations
+- Review scan history and event logs for traceability
 
-![NetSecure Pro Live Monitoring](assets/screenshots/live-monitoring.png)
+### Reporting and AI Assistance
 
-### Topology
+- Export a professional PDF security report
+- Export selected datasets to CSV
+- Use the AI Security Copilot in `General Chat` and `Scan-Aware Chat` modes
+- Store the OpenRouter model and API key from the application settings
 
-![NetSecure Pro Topology](assets/screenshots/topology.png)
+## Interface Preview
 
-### History
+<table>
+  <tr>
+    <td align="center"><strong>Dashboard</strong><br/><img src="assets/screenshots/dashboard.png" alt="Dashboard" width="440" /></td>
+    <td align="center"><strong>Network Scan</strong><br/><img src="assets/screenshots/network-scan.png" alt="Network Scan" width="440" /></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Port Analysis</strong><br/><img src="assets/screenshots/port-analysis.png" alt="Port Analysis" width="440" /></td>
+    <td align="center"><strong>Live Monitoring</strong><br/><img src="assets/screenshots/live-monitoring.png" alt="Live Monitoring" width="440" /></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Topology</strong><br/><img src="assets/screenshots/topology.png" alt="Topology" width="440" /></td>
+    <td align="center"><strong>AI Assistant</strong><br/><img src="assets/screenshots/ai-assistant.png" alt="AI Assistant" width="440" /></td>
+  </tr>
+</table>
 
-![NetSecure Pro History](assets/screenshots/history.png)
+<details>
+  <summary><strong>Additional Screens</strong></summary>
+  <br/>
 
-### Event Log
+  <table>
+    <tr>
+      <td align="center"><strong>History</strong><br/><img src="assets/screenshots/history.png" alt="History" width="440" /></td>
+      <td align="center"><strong>Event Log</strong><br/><img src="assets/screenshots/event-log.png" alt="Event Log" width="440" /></td>
+    </tr>
+    <tr>
+      <td align="center"><strong>Reports</strong><br/><img src="assets/screenshots/reports.png" alt="Reports" width="440" /></td>
+      <td align="center"><strong>Settings</strong><br/><img src="assets/screenshots/settings.png" alt="Settings" width="440" /></td>
+    </tr>
+    <tr>
+      <td align="center"><strong>User Management</strong><br/><img src="assets/screenshots/user-management.png" alt="User Management" width="440" /></td>
+      <td align="center"><strong>Security Workflow</strong><br/>Asset discovery, port review, monitoring, AI analysis, and reporting are all accessible from the same desktop workspace.</td>
+    </tr>
+  </table>
 
-![NetSecure Pro Event Log](assets/screenshots/event-log.png)
+</details>
 
-### Reports
+## Architecture
 
-![NetSecure Pro Reports](assets/screenshots/reports.png)
+- **Presentation Layer**: PyQt6 windows, forms, tables, cards, charts, and navigation
+- **Core Services**: authentication, discovery, port scanning, monitoring, scoring, alerts, and reporting
+- **Persistence Layer**: SQLite storage for users, settings, devices, alerts, reports, and history
+- **AI Layer**: OpenRouter-backed assistant for operational guidance and scan-aware questions
 
-### AI Assistant
+## Technology Stack
 
-![NetSecure Pro AI Assistant](assets/screenshots/ai-assistant.png)
-
-### Settings
-
-![NetSecure Pro Settings](assets/screenshots/settings.png)
-
-### User Management
-
-![NetSecure Pro User Management](assets/screenshots/user-management.png)
-
-## Tech Stack
-
-- Python 3.10+
-- PyQt6
-- SQLite
-- psutil
+- `Python 3.10+`
+- `PyQt6`
+- `SQLite`
+- `psutil`
+- `OpenRouter API`
 
 ## Getting Started
 
+### 1. Install dependencies
+
 ```powershell
 python -m pip install -r requirements.txt
+```
+
+### 2. Launch the application
+
+```powershell
 python main.py
 ```
 
-## Default Credentials
+### 3. Sign in with the default demo account
 
 - Username: `admin`
 - Password: `admin123`
@@ -95,13 +131,34 @@ netsecure_pro/
   reporting.py
   ai_assistant.py
   ui.py
+assets/screenshots/
+README.md
+requirements.txt
 ```
 
-## Notes
+## AI Security Copilot
 
-- Network discovery depends on local permissions, ICMP behavior, and ARP visibility on the target network.
+The application includes an integrated AI assistant with two operating modes:
+
+- **General Chat**: ask defensive cybersecurity questions such as how to close a port, block an IP, or harden a service
+- **Scan-Aware Chat**: ask questions that rely on the latest discovered hosts, open ports, alerts, and security score
+
+## PDF Reporting
+
+The built-in reporting engine generates a professional PDF document that summarizes:
+
+- organization identity
+- detected assets
+- exposed services
+- recent alerts
+- security posture and recommendations
+
+## Operational Notes
+
+- Network discovery depends on local permissions, ICMP behavior, and ARP visibility on the target environment.
 - The application creates `netsecure_pro.db` on first launch to store users, settings, alerts, reports, and scan history.
-- Generated reports and exports are kept locally and are not tracked in Git by default.
+- Generated reports and CSV exports stay local and are ignored by Git by default.
+- The default credentials are intended for demonstration and should be changed in real deployments.
 
 ## License
 
