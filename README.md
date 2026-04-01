@@ -25,9 +25,17 @@ NetSecure Pro is a Python desktop application for local network supervision, sec
 
 ![NetSecure Pro Network Scan](assets/screenshots/network-scan.png)
 
+### Port Analysis
+
+![NetSecure Pro Port Analysis](assets/screenshots/port-analysis.png)
+
 ### Live Monitoring
 
 ![NetSecure Pro Live Monitoring](assets/screenshots/live-monitoring.png)
+
+### Topology
+
+![NetSecure Pro Topology](assets/screenshots/topology.png)
 
 ### History
 
@@ -37,9 +45,21 @@ NetSecure Pro is a Python desktop application for local network supervision, sec
 
 ![NetSecure Pro Event Log](assets/screenshots/event-log.png)
 
+### Reports
+
+![NetSecure Pro Reports](assets/screenshots/reports.png)
+
+### AI Assistant
+
+![NetSecure Pro AI Assistant](assets/screenshots/ai-assistant.png)
+
 ### Settings
 
 ![NetSecure Pro Settings](assets/screenshots/settings.png)
+
+### User Management
+
+![NetSecure Pro User Management](assets/screenshots/user-management.png)
 
 ## Tech Stack
 
