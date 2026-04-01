@@ -15,6 +15,7 @@
 ## Table of Contents
 
 - [Overview](#overview)
+- [Project Highlights](#project-highlights)
 - [Core Capabilities](#core-capabilities)
 - [Interface Preview](#interface-preview)
 - [Architecture](#architecture)
@@ -30,6 +31,29 @@
 ## Overview
 
 NetSecure Pro is a Python desktop application designed to centralize the essential tasks of local network supervision and basic security assessment. From a single interface, an administrator can discover active hosts, inspect open services, monitor traffic, review alerts, calculate a network security score, generate professional PDF reports, and query an AI copilot for remediation guidance.
+
+## Project Highlights
+
+<table>
+  <tr>
+    <td width="25%" valign="top">
+      <strong>Unified Security Workspace</strong><br/>
+      Hosts, ports, alerts, monitoring, AI guidance, and reporting are available from one desktop application.
+    </td>
+    <td width="25%" valign="top">
+      <strong>Actionable Visibility</strong><br/>
+      The project goes beyond display-only dashboards by connecting discovery, exposure review, scoring, and recommendations.
+    </td>
+    <td width="25%" valign="top">
+      <strong>Professional Output</strong><br/>
+      PDF reports, CSV exports, event logs, and scan history make the application useful for both demonstration and operational review.
+    </td>
+    <td width="25%" valign="top">
+      <strong>AI-Assisted Guidance</strong><br/>
+      The integrated copilot supports both general cybersecurity questions and scan-aware remediation prompts.
+    </td>
+  </tr>
+</table>
 
 ## Core Capabilities
 
@@ -170,12 +194,29 @@ The built-in reporting engine generates a professional PDF document that summari
 
 ## Roadmap / Future Improvements
 
+### Security Intelligence
+
 - Add richer anomaly detection workflows with AI-assisted prioritization
 - Improve service fingerprinting and host classification accuracy
+- Extend risk scoring with more contextual decision rules
+
+### Visibility and Reporting
+
 - Expand report export options with richer visual summaries and charts
 - Introduce comparison between historical scans and current posture
+- Add clearer longitudinal views for alerts, hosts, and exposure trends
+
+### Administration and Access Control
+
 - Add stronger multi-user administration and permission controls
+- Improve credential management and operational hardening for production-style usage
+- Refine settings management for larger environments and repeated scans
+
+### Platform Evolution
+
 - Extend topology and asset relationships with smarter grouping and context
+- Prepare the project for broader integration scenarios and future extensibility
+- Explore packaging and deployment improvements for easier distribution
 
 ## Operational Notes
 
@@ -187,4 +228,3 @@ The built-in reporting engine generates a professional PDF document that summari
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
