@@ -1,42 +1,38 @@
 # NetSecure Pro
 
-NetSecure Pro is a Python desktop application for local network monitoring, analysis, and basic security assessment.
+NetSecure Pro is a Python desktop application for local network supervision, security analysis, and reporting. It helps administrators discover connected hosts, inspect exposed services, monitor traffic, review alerts, calculate a security score, and generate professional PDF reports from a single interface.
 
-## Included Modules
+## Features
 
 - Local authentication with SQLite
-- Network discovery through ping sweep
-- IP / MAC / hostname detection
-- Common TCP port scanning
-- Real-time network monitoring
-- Simple alerts
-- Security score calculation
+- Network discovery with `Ping`, `ARP`, and TCP fallback
+- Host enrichment with IP, MAC, hostname, vendor, device type, and OS guess
+- Multi-mode TCP port analysis with basic banner grabbing
+- Real-time network monitoring and traffic indicators
+- Alerting and rule-based security scoring
+- Network topology view
+- Scan history, event log, and CSV export
 - PDF report generation
-- Scan history
-- Event log
-- Device search and filtering
-- Persistent dark mode
-- CSV export for key datasets
-- Simplified network topology view
-- Customizable security thresholds
-- Multi-mode port scanning (`quick`, `common`, `extended`, `custom`)
-- Basic banner grabbing for selected services
-- Multi-method network scanning (`Ping`, `ARP`, `TCP fallback`)
-- Enriched discovery results with vendor and discovery method
-- Basic heuristic OS fingerprinting (`Windows`, `Linux`, `Router`, `Android`, `iOS`, etc.)
-- Live progress bar during network scans
-- Service-based fingerprint refinement after port scans
-- Network scan and port scan cancellation
-- Device-type icons in the topology view
+- OpenRouter-powered AI assistant
 
-## Stack
+## Screenshots
+
+### Dashboard
+
+![NetSecure Pro Dashboard](assets/screenshots/dashboard.png)
+
+### Settings
+
+![NetSecure Pro Settings](assets/screenshots/settings.png)
+
+## Tech Stack
 
 - Python 3.10+
 - PyQt6
 - SQLite
 - psutil
 
-## Run the Project
+## Getting Started
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -48,9 +44,29 @@ python main.py
 - Username: `admin`
 - Password: `admin123`
 
+## Project Structure
+
+```text
+main.py
+netsecure_pro/
+  app.py
+  auth.py
+  database.py
+  network.py
+  ports.py
+  monitor.py
+  security.py
+  reporting.py
+  ai_assistant.py
+  ui.py
+```
+
 ## Notes
 
-- Network scanning relies on `ping` and `arp`, so some results may depend on Windows permissions and ICMP behavior on the target network.
-- Port scanning uses a curated list of common ports to keep the application responsive.
-- The PDF generator is built into the project and does not depend on `reportlab`.
-- The project automatically creates `netsecure_pro.db` on first launch to store users, history, alerts, and settings.
+- Network discovery depends on local permissions, ICMP behavior, and ARP visibility on the target network.
+- The application creates `netsecure_pro.db` on first launch to store users, settings, alerts, reports, and scan history.
+- Generated reports and exports are kept locally and are not tracked in Git by default.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
