@@ -15,7 +15,6 @@
 ## Table of Contents
 
 - [Overview](#overview)
-- [Demo Preview](#demo-preview)
 - [Core Capabilities](#core-capabilities)
 - [Interface Preview](#interface-preview)
 - [Architecture](#architecture)
@@ -31,12 +30,6 @@
 ## Overview
 
 NetSecure Pro is a Python desktop application designed to centralize the essential tasks of local network supervision and basic security assessment. From a single interface, an administrator can discover active hosts, inspect open services, monitor traffic, review alerts, calculate a network security score, generate professional PDF reports, and query an AI copilot for remediation guidance.
-
-## Demo Preview
-
-<p align="center">
-  <img src="assets/screenshots/demo.gif" alt="NetSecure Pro demo preview" width="920" />
-</p>
 
 ## Core Capabilities
 
@@ -194,3 +187,4 @@ The built-in reporting engine generates a professional PDF document that summari
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
