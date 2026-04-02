@@ -1,7 +1,7 @@
-﻿<h1 align="center">NetSecure Pro</h1>
+<h1 align="center">NetSecure Pro</h1>
 
 <p align="center">
-  Intelligent desktop application for local network supervision, security analysis, reporting, and AI-assisted operational guidance.
+  Intelligent desktop application for local network supervision, security analysis, operational automation, reporting, and AI-assisted remediation guidance.
 </p>
 
 <p align="center">
@@ -9,7 +9,8 @@
   <img src="https://img.shields.io/badge/PyQt6-Desktop_UI-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PyQt6" />
   <img src="https://img.shields.io/badge/SQLite-Local_Database-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" />
   <img src="https://img.shields.io/badge/OpenRouter-AI_Assistant-0F766E?style=for-the-badge" alt="OpenRouter AI Assistant" />
-  <img src="https://img.shields.io/badge/License-MIT-1F2937?style=for-the-badge" alt="MIT License" />
+  <img src="https://img.shields.io/badge/PyInstaller-Windows_EXE-1F2937?style=for-the-badge" alt="PyInstaller" />
+  <img src="https://img.shields.io/badge/License-MIT-111827?style=for-the-badge" alt="MIT License" />
 </p>
 
 ## Table of Contents
@@ -17,20 +18,24 @@
 - [Overview](#overview)
 - [Project Highlights](#project-highlights)
 - [Core Capabilities](#core-capabilities)
+- [Automation and Security Controls](#automation-and-security-controls)
 - [Interface Preview](#interface-preview)
 - [Architecture](#architecture)
 - [Technology Stack](#technology-stack)
 - [Getting Started](#getting-started)
+- [Build Windows EXE](#build-windows-exe)
 - [Project Structure](#project-structure)
 - [AI Security Copilot](#ai-security-copilot)
-- [PDF Reporting](#pdf-reporting)
-- [Roadmap / Future Improvements](#roadmap--future-improvements)
+- [Reporting and Exports](#reporting-and-exports)
 - [Operational Notes](#operational-notes)
+- [Roadmap / Future Improvements](#roadmap--future-improvements)
 - [License](#license)
 
 ## Overview
 
-NetSecure Pro is a Python desktop application designed to centralize the essential tasks of local network supervision and basic security assessment. From a single interface, an administrator can discover active hosts, inspect open services, monitor traffic, review alerts, calculate a network security score, generate professional PDF reports, and query an AI copilot for remediation guidance.
+NetSecure Pro is a Python desktop application designed to centralize local network visibility, exposure review, live monitoring, and operator guidance in one workspace. From a single interface, an administrator can discover active hosts, inspect open services, monitor traffic, review alerts, compare scans over time, schedule automatic scans, generate professional PDF reports, export security data, and query an AI copilot for remediation guidance.
+
+The current version goes beyond a simple scanner by combining discovery, risk scoring, scheduled operations, historical comparison, user management, and AI-assisted interpretation into one operational tool.
 
 ## Project Highlights
 
@@ -38,19 +43,19 @@ NetSecure Pro is a Python desktop application designed to centralize the essenti
   <tr>
     <td width="25%" valign="top">
       <strong>Unified Security Workspace</strong><br/>
-      Hosts, ports, alerts, monitoring, AI guidance, and reporting are available from one desktop application.
+      Discovery, port analysis, monitoring, alerts, reporting, AI assistance, and settings are available from one desktop application.
     </td>
     <td width="25%" valign="top">
-      <strong>Actionable Visibility</strong><br/>
-      The project goes beyond display-only dashboards by connecting discovery, exposure review, scoring, and recommendations.
+      <strong>Operational Automation</strong><br/>
+      Scheduled network scans, scheduled PDF reports, and JSON snapshots help move the application from manual review to repeatable workflow.
     </td>
     <td width="25%" valign="top">
-      <strong>Professional Output</strong><br/>
-      PDF reports, CSV exports, event logs, and scan history make the application useful for both demonstration and operational review.
+      <strong>Actionable Intelligence</strong><br/>
+      Scan comparison, stronger risk rules, toast notifications, and remediation guidance turn raw network data into decisions.
     </td>
     <td width="25%" valign="top">
-      <strong>AI-Assisted Guidance</strong><br/>
-      The integrated copilot supports both general cybersecurity questions and scan-aware remediation prompts.
+      <strong>Professional Delivery</strong><br/>
+      CSV exports, PDF reports, EXE packaging support, local user management, and audit-style history make the project ready for demonstration and practical use.
     </td>
   </tr>
 </table>
@@ -60,28 +65,49 @@ NetSecure Pro is a Python desktop application designed to centralize the essenti
 ### Network Discovery
 
 - Discover active hosts through `Ping`, `ARP`, and TCP fallback methods
-- Enrich hosts with IP, MAC address, hostname, vendor, device type, and OS guess
-- Filter and search discovered assets directly from the interface
+- Auto-detect the connected network and prefill the current IP range
+- Enrich discovered assets with IP, MAC address, hostname, vendor, device type, and OS guess
+- Filter and search discovered hosts directly from the interface
+- Support `Quick`, `Balanced`, and `Deep` discovery workflows
 
 ### Port and Service Analysis
 
-- Run multi-mode TCP scans (`Quick`, `Common`, `Extended`, `Custom`)
+- Run multi-mode TCP scans: `Quick`, `Common`, `Extended`, and `Custom`
 - Detect exposed services and classify their risk level
-- Capture basic service banners for better context during analysis
+- Capture basic service banners for stronger context
+- Refine device understanding from exposed services after a port scan
+- Explain selected ports with purpose, risk context, and remediation guidance
 
-### Monitoring and Security Analysis
+### Live Monitoring and Alerting
 
-- Track live bandwidth and interface activity
-- Generate alerts from operational and security signals
-- Produce a rule-based security score with observations and recommendations
-- Review scan history and event logs for traceability
+- Track upload, download, packets, and interface activity in real time
+- Visualize bandwidth history with a live chart and peak indicator
+- Raise alerts for high traffic spikes and suspicious operational events
+- Show toast notifications for completed scans, new critical findings, and important system events
 
-### Reporting and AI Assistance
+### Historical Visibility
 
-- Export a professional PDF security report
-- Export selected datasets to CSV
-- Use the AI Security Copilot in `General Chat` and `Scan-Aware Chat` modes
-- Store the OpenRouter model and API key from the application settings
+- Store scan history, report history, and internal event logs in SQLite
+- Compare the latest scan with previous baselines to highlight changes in hosts and ports
+- Summarize exposure drift for both operator review and AI-assisted analysis
+
+### Administration and Hardening
+
+- Manage local users with `Admin` and `Viewer` style access control
+- Enforce stronger password hashing and password update workflows
+- Separate company profile, AI settings, thresholds, and user management in the settings workspace
+- Restrict sensitive operations for non-admin users
+
+## Automation and Security Controls
+
+The current release includes operational automation and stronger security decision support:
+
+- Scheduled network scans with configurable interval and scan mode
+- Scheduled PDF report generation after automatic scans
+- Scheduled JSON snapshot export for offline comparison or archival workflows
+- Security scoring powered by rules for weak protocols, exposed administrative services, router Telnet exposure, SMB/RDP combinations, traffic spikes, and unmanaged network growth
+- Notification toasts for successful scans, critical ports, scheduled task failures, and high traffic spikes
+- AI quick actions such as `Top Risks`, `Fix First`, `Explain Selected Host`, `Remediation Plan`, `Summarize Changes`, `Close Selected Port`, and `Block Selected IP`
 
 ## Interface Preview
 
@@ -115,7 +141,7 @@ NetSecure Pro is a Python desktop application designed to centralize the essenti
     </tr>
     <tr>
       <td align="center"><strong>User Management</strong><br/><img src="assets/screenshots/user-management.png" alt="User Management" width="440" /></td>
-      <td align="center"><strong>Security Workflow</strong><br/>Asset discovery, port review, monitoring, AI analysis, and reporting are all accessible from the same desktop workspace.</td>
+      <td align="center"><strong>Security Workflow</strong><br/>Asset discovery, exposure review, monitoring, automated reporting, AI analysis, and history comparison are all accessible from the same desktop workspace.</td>
     </tr>
   </table>
 
@@ -123,10 +149,13 @@ NetSecure Pro is a Python desktop application designed to centralize the essenti
 
 ## Architecture
 
-- **Presentation Layer**: PyQt6 windows, forms, tables, cards, charts, and navigation
-- **Core Services**: authentication, discovery, port scanning, monitoring, scoring, alerts, and reporting
-- **Persistence Layer**: SQLite storage for users, settings, devices, alerts, reports, and history
-- **AI Layer**: OpenRouter-backed assistant for operational guidance and scan-aware questions
+- **Presentation Layer**: PyQt6 windows, forms, tables, status badges, charts, toasts, and navigation
+- **Discovery and Exposure Layer**: host discovery, port scanning, service enrichment, and topology rendering
+- **Security Analysis Layer**: alert generation, risk scoring, comparison summaries, recommendations, and notifications
+- **Automation Layer**: scheduled scans, scheduled reports, scheduled snapshots, and runtime status management
+- **Administration Layer**: authentication, local user management, settings persistence, password controls, and role-based restrictions
+- **Persistence Layer**: SQLite storage for users, settings, devices, alerts, reports, snapshots, events, and history
+- **AI Layer**: OpenRouter-backed copilot for general cybersecurity guidance and scan-aware remediation prompts
 
 ## Technology Stack
 
@@ -135,6 +164,7 @@ NetSecure Pro is a Python desktop application designed to centralize the essenti
 - `SQLite`
 - `psutil`
 - `OpenRouter API`
+- `PyInstaller`
 
 ## Getting Started
 
@@ -155,75 +185,117 @@ python main.py
 - Username: `admin`
 - Password: `admin123`
 
+## Build Windows EXE
+
+The repository includes PyInstaller support for generating a distributable Windows build.
+
+### 1. Install build dependencies
+
+```powershell
+python -m pip install -r requirements-build.txt
+```
+
+### 2. Build the application
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_release.ps1 -Clean
+```
+
+### 3. Locate the generated executable
+
+```text
+dist\NetSecure Pro\NetSecure Pro.exe
+```
+
+Keep the full `dist\NetSecure Pro` folder together when moving the application to another Windows machine.
+
 ## Project Structure
 
 ```text
 main.py
+build_release.ps1
+netsecure_pro.spec
+requirements.txt
+requirements-build.txt
 netsecure_pro/
+  __init__.py
   app.py
+  ai_assistant.py
   auth.py
   database.py
+  exports.py
+  models.py
+  monitor.py
   network.py
   ports.py
-  monitor.py
-  security.py
   reporting.py
-  ai_assistant.py
+  security.py
   ui.py
 assets/screenshots/
 README.md
-requirements.txt
+LICENSE
 ```
 
 ## AI Security Copilot
 
 The application includes an integrated AI assistant with two operating modes:
 
-- **General Chat**: ask defensive cybersecurity questions such as how to close a port, block an IP, or harden a service
-- **Scan-Aware Chat**: ask questions that rely on the latest discovered hosts, open ports, alerts, and security score
+- **General Chat**: ask defensive cybersecurity questions such as how to close a port, block an IP, harden a service, or review a remediation approach
+- **Scan-Aware Chat**: ask questions that rely on the latest discovered hosts, open ports, alerts, score, and comparison summary
 
-## PDF Reporting
+The assistant also includes quick prompt actions for routine operator tasks:
 
-The built-in reporting engine generates a professional PDF document that summarizes:
+- `Top Risks`
+- `Fix First`
+- `Suspicious Host`
+- `Explain Selected Host`
+- `Remediation Plan`
+- `Summarize Changes`
+- `Close Selected Port`
+- `Block Selected IP`
 
-- organization identity
-- detected assets
-- exposed services
-- recent alerts
-- security posture and recommendations
+## Reporting and Exports
+
+The application supports multiple output formats for review and archival:
+
+- Professional PDF security reports with executive summary, findings, and recommendations
+- CSV exports from key tables and operational views
+- Scheduled and on-demand JSON snapshots for structured scan retention
+- History records for scans, reports, and internal events
+
+## Operational Notes
+
+- Network discovery depends on local permissions, ICMP behavior, ARP visibility, and the active Windows interface.
+- The application creates `netsecure_pro.db` on first launch to store users, settings, alerts, reports, scan history, and automation preferences.
+- Generated reports and exports stay local and are ignored by Git by default.
+- The default credentials are intended for demonstration only and should be changed in real deployments.
+- OpenRouter API credentials are managed from the settings page and should be protected like any operational secret.
 
 ## Roadmap / Future Improvements
 
 ### Security Intelligence
 
-- Add richer anomaly detection workflows with AI-assisted prioritization
-- Improve service fingerprinting and host classification accuracy
-- Extend risk scoring with more contextual decision rules
+- Add richer anomaly detection workflows backed by local telemetry baselines
+- Expand service fingerprinting and host classification accuracy
+- Introduce more contextual remediation mapping per device profile and exposure set
 
 ### Visibility and Reporting
 
-- Expand report export options with richer visual summaries and charts
-- Introduce comparison between historical scans and current posture
-- Add clearer longitudinal views for alerts, hosts, and exposure trends
+- Add richer diff views for scan comparison and historical exposure evolution
+- Extend PDF and export outputs with deeper visual summaries and trend charts
+- Improve topology insight with richer relationships and interactive drill-down behavior
 
-### Administration and Access Control
+### Administration and Operations
 
-- Add stronger multi-user administration and permission controls
-- Improve credential management and operational hardening for production-style usage
-- Refine settings management for larger environments and repeated scans
+- Add stronger account lifecycle controls and broader administrative workflows
+- Improve secret handling and configuration hardening for production-style usage
+- Extend scheduled tasks with retention policies and more flexible execution rules
 
-### Platform Evolution
+### Distribution
 
-- Extend topology and asset relationships with smarter grouping and context
-- Prepare the project for broader integration scenarios and future extensibility
-- Explore packaging and deployment improvements for easier distribution
-
-## Operational Notes
-
-- Network discovery depends on local permissions, ICMP behavior, and ARP visibility on the target environment.
-- The application creates `netsecure_pro.db` on first launch to store users, settings, alerts, reports, and scan history.
-- Generated reports and CSV exports stay local and are ignored by Git by default.
-- The default credentials are intended for demonstration and should be changed in real deployments.
+- Package the project with an installer workflow in addition to the EXE build
+- Improve release automation and deployment documentation
+- Explore broader integration scenarios for multi-network or client-server deployment
 
 ## License
 
