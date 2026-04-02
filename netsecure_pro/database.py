@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from .auth import hash_password
+from .auth import hash_password, password_needs_rehash, validate_password_policy, verify_password
 from .models import Alert, Device, EventLogEntry, PortScanResult, ScanRun, SecuritySettings
 
 
@@ -246,6 +246,12 @@ class DatabaseManager:
                 ("openrouter_api_key", ""),
                 ("openrouter_model", "openai/gpt-4o-mini"),
                 ("openrouter_mode", "scan-aware"),
+                ("auto_scan_enabled", "0"),
+                ("auto_scan_interval_value", "15"),
+                ("auto_scan_interval_unit", "minutes"),
+                ("auto_scan_mode", "quick"),
+                ("scheduled_report_enabled", "0"),
+                ("scheduled_snapshot_enabled", "0"),
             ):
                 connection.execute(
                     """
@@ -262,7 +268,28 @@ class DatabaseManager:
                 "SELECT password FROM users WHERE username = ? AND COALESCE(active, 1) = 1",
                 (username,),
             ).fetchone()
-        return bool(row and row["password"] == hash_password(password))
+            if row is None:
+                return False
+
+            stored_hash = str(row["password"] or "")
+            if not verify_password(password, stored_hash):
+                return False
+
+            if password_needs_rehash(stored_hash):
+                connection.execute(
+                    "UPDATE users SET password = ? WHERE username = ?",
+                    (hash_password(password), username),
+                )
+                connection.commit()
+            return True
+
+    def fetch_user_role(self, username: str) -> str:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COALESCE(role, 'Viewer') AS role FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()
+        return str(row["role"]) if row else "Viewer"
 
     def fetch_users(self) -> list[sqlite3.Row]:
         with self._connect() as connection:
@@ -278,6 +305,10 @@ class DatabaseManager:
         return list(rows)
 
     def add_user(self, username: str, password: str, role: str) -> None:
+        password_errors = validate_password_policy(password)
+        if password_errors:
+            raise ValueError(" ".join(password_errors))
+
         with self._connect() as connection:
             connection.execute(
                 """
@@ -285,6 +316,22 @@ class DatabaseManager:
                 VALUES (?, ?, ?, 1, datetime('now'))
                 """,
                 (username, hash_password(password), role),
+            )
+            connection.commit()
+
+    def update_user_password(self, username: str, password: str) -> None:
+        password_errors = validate_password_policy(password)
+        if password_errors:
+            raise ValueError(" ".join(password_errors))
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE users
+                SET password = ?
+                WHERE username = ?
+                """,
+                (hash_password(password), username),
             )
             connection.commit()
 

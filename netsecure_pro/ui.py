@@ -10,6 +10,7 @@ from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, Q
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -29,6 +30,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QStackedWidget,
     QStyle,
     QTabWidget,
@@ -40,6 +42,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from .auth import validate_password_policy
 from .database import DatabaseManager
 from .exports import CSVExporter
 from .ai_assistant import OpenRouterAssistant
@@ -727,10 +730,27 @@ class MainWindow(QMainWindow):
         self.pending_ai_question = ""
         self.pending_ai_mode = "scan-aware"
         self.current_theme = self.database.get_setting("theme", "light") or "light"
+        self.current_user_role = self.database.fetch_user_role(username)
         self.security_settings = self.database.fetch_security_settings()
         self.company_profile = self.database.fetch_company_profile()
         self.active_network_scan_thread: NetworkScanThread | None = None
         self.active_port_scan_thread: PortScanThread | None = None
+        self.latest_network_change_summary = "No device comparison available yet."
+        self.latest_port_change_summary = "No port comparison available yet."
+        self.latest_combined_change_summary = "No scan comparison available yet."
+        self.traffic_spike_notified = False
+        self.auto_scan_timer = QTimer(self)
+        self.auto_scan_timer.setSingleShot(True)
+        self.auto_scan_timer.timeout.connect(self._handle_auto_scan_timeout)
+        self.auto_scan_countdown_timer = QTimer(self)
+        self.auto_scan_countdown_timer.setInterval(1000)
+        self.auto_scan_countdown_timer.timeout.connect(self._tick_auto_scan_countdown)
+        self.auto_scan_enabled = False
+        self.auto_scan_interval_seconds = 15 * 60
+        self.auto_scan_mode = "quick"
+        self.auto_scan_seconds_remaining = 0
+        self.auto_report_enabled = False
+        self.auto_snapshot_export_enabled = False
 
         self.setWindowTitle(self._app_window_title())
         self.resize(1460, 900)
@@ -861,6 +881,9 @@ class MainWindow(QMainWindow):
         self.score_label = QLabel(self.latest_assessment.label)
         self.last_scan_label = QLabel("Last scan: no history available yet.")
         self.last_scan_label.setStyleSheet("color: #64748b;")
+        self.scan_comparison_label = QLabel("Latest comparison: no scan comparison available yet.")
+        self.scan_comparison_label.setStyleSheet("color: #64748b;")
+        self.scan_comparison_label.setWordWrap(True)
         self.observations_box = QTextEdit()
         self.observations_box.setReadOnly(True)
         self.recommendations_box = QTextEdit()
@@ -868,6 +891,7 @@ class MainWindow(QMainWindow):
         security_layout.addWidget(self.score_progress)
         security_layout.addWidget(self.score_label)
         security_layout.addWidget(self.last_scan_label)
+        security_layout.addWidget(self.scan_comparison_label)
         security_layout.addWidget(QLabel("Observations"))
         security_layout.addWidget(self.observations_box)
         security_layout.addWidget(QLabel("Recommendations"))
@@ -896,6 +920,10 @@ class MainWindow(QMainWindow):
         self.target_input = QLineEdit(self.network_scanner.suggest_target())
         self.target_input.setMinimumHeight(38)
         self.target_input.setPlaceholderText("Example: 192.168.1.0/24 or 192.168.1.10-192.168.1.40")
+        self.detect_network_button = QPushButton("Use Current")
+        self.detect_network_button.setMinimumHeight(38)
+        self.detect_network_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
+        self.detect_network_button.clicked.connect(self._detect_current_network_target)
         self.network_mode_selector = QComboBox()
         self.network_mode_selector.setMinimumHeight(38)
         self.network_mode_selector.addItem("Quick", "quick")
@@ -919,6 +947,7 @@ class MainWindow(QMainWindow):
         self.scan_status_badge.setMinimumHeight(32)
         toolbar.addWidget(QLabel("IP Range"))
         toolbar.addWidget(self.target_input, 1)
+        toolbar.addWidget(self.detect_network_button)
         toolbar.addWidget(QLabel("Mode"))
         toolbar.addWidget(self.network_mode_selector)
         scan_actions = QHBoxLayout()
@@ -965,8 +994,20 @@ class MainWindow(QMainWindow):
         self.scan_table.itemSelectionChanged.connect(self._refresh_ai_context_panel)
 
         layout.addLayout(toolbar)
+        auto_scan_row = QHBoxLayout()
+        auto_scan_row.setSpacing(10)
+        self.auto_scan_badge = QLabel("AUTO SCAN OFF")
+        self.auto_scan_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.auto_scan_badge.setMinimumHeight(32)
+        self.auto_scan_status = QLabel("Automatic network scans are disabled.")
+        self.auto_scan_status.setStyleSheet("color: #64748b;")
+        self.auto_scan_status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        auto_scan_row.addWidget(self.auto_scan_badge)
+        auto_scan_row.addWidget(self.auto_scan_status, 1)
+
         layout.addWidget(self.scan_progress)
         layout.addWidget(self.scan_progress_detail)
+        layout.addLayout(auto_scan_row)
         layout.addLayout(filters)
         layout.addWidget(self.scan_table)
         return page
@@ -1109,6 +1150,9 @@ class MainWindow(QMainWindow):
         top = QHBoxLayout()
         self.history_status = QLabel("Scan and analysis history.")
         self.history_status.setStyleSheet("color: #64748b;")
+        self.history_compare_label = QLabel("Latest comparison: no scan comparison available yet.")
+        self.history_compare_label.setStyleSheet("color: #64748b;")
+        self.history_compare_label.setWordWrap(True)
         refresh_button = QPushButton("Refresh History")
         refresh_button.clicked.connect(self._refresh_history_table)
         export_button = QPushButton("Export CSV")
@@ -1124,6 +1168,7 @@ class MainWindow(QMainWindow):
         self.history_table.setSortingEnabled(True)
 
         layout.addLayout(top)
+        layout.addWidget(self.history_compare_label)
         layout.addWidget(self.history_table)
         return page
 
@@ -1161,10 +1206,13 @@ class MainWindow(QMainWindow):
         self.generate_report_button.clicked.connect(self._generate_report)
         self.export_reports_button = QPushButton("Export CSV")
         self.export_reports_button.clicked.connect(self._export_reports_csv)
+        self.export_snapshot_button = QPushButton("Export JSON Snapshot")
+        self.export_snapshot_button.clicked.connect(self._export_snapshot_json)
         self.report_status = QLabel("No reports generated yet.")
         self.report_status.setStyleSheet("color: #64748b;")
         top.addWidget(self.generate_report_button)
         top.addWidget(self.export_reports_button)
+        top.addWidget(self.export_snapshot_button)
         top.addWidget(self.report_status)
         top.addStretch(1)
 
@@ -1285,7 +1333,7 @@ class MainWindow(QMainWindow):
         quick_card = QFrame()
         quick_card.setObjectName("Card")
         quick_card.setStyleSheet("QFrame#Card { border-radius: 18px; }")
-        quick_card.setMinimumHeight(220)
+        quick_card.setMinimumHeight(300)
         quick_layout = QGridLayout(quick_card)
         quick_layout.setHorizontalSpacing(10)
         quick_layout.setVerticalSpacing(10)
@@ -1305,6 +1353,12 @@ class MainWindow(QMainWindow):
         self.ai_suspicious_host_button.clicked.connect(self._ask_ai_suspicious_host)
         self.ai_explain_score_button = QPushButton("Explain Score")
         self.ai_explain_score_button.clicked.connect(self._ask_ai_explain_score)
+        self.ai_explain_host_button = QPushButton("Explain Selected Host")
+        self.ai_explain_host_button.clicked.connect(self._ask_ai_explain_selected_host)
+        self.ai_remediation_plan_button = QPushButton("Remediation Plan")
+        self.ai_remediation_plan_button.clicked.connect(self._ask_ai_remediation_plan)
+        self.ai_summarize_changes_button = QPushButton("Summarize Changes")
+        self.ai_summarize_changes_button.clicked.connect(self._ask_ai_summarize_changes)
         self.ai_close_port_button = QPushButton("Close Selected Port")
         self.ai_close_port_button.clicked.connect(self._ask_ai_close_selected_port)
         self.ai_block_ip_button = QPushButton("Block Selected IP")
@@ -1314,6 +1368,9 @@ class MainWindow(QMainWindow):
         self.ai_fix_first_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton))
         self.ai_suspicious_host_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView))
         self.ai_explain_score_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation))
+        self.ai_explain_host_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+        self.ai_remediation_plan_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
+        self.ai_summarize_changes_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView))
         self.ai_close_port_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton))
         self.ai_block_ip_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserStop))
 
@@ -1322,6 +1379,9 @@ class MainWindow(QMainWindow):
             self.ai_fix_first_button,
             self.ai_suspicious_host_button,
             self.ai_explain_score_button,
+            self.ai_explain_host_button,
+            self.ai_remediation_plan_button,
+            self.ai_summarize_changes_button,
             self.ai_close_port_button,
             self.ai_block_ip_button,
         ):
@@ -1332,9 +1392,12 @@ class MainWindow(QMainWindow):
         quick_layout.addWidget(self.ai_top_risks_button, 2, 0)
         quick_layout.addWidget(self.ai_fix_first_button, 2, 1)
         quick_layout.addWidget(self.ai_suspicious_host_button, 2, 2)
-        quick_layout.addWidget(self.ai_explain_score_button, 3, 0)
-        quick_layout.addWidget(self.ai_close_port_button, 3, 1)
-        quick_layout.addWidget(self.ai_block_ip_button, 3, 2)
+        quick_layout.addWidget(self.ai_explain_host_button, 3, 0)
+        quick_layout.addWidget(self.ai_explain_score_button, 3, 1)
+        quick_layout.addWidget(self.ai_remediation_plan_button, 3, 2)
+        quick_layout.addWidget(self.ai_close_port_button, 4, 0)
+        quick_layout.addWidget(self.ai_block_ip_button, 4, 1)
+        quick_layout.addWidget(self.ai_summarize_changes_button, 4, 2)
 
         context_card = QFrame()
         context_card.setObjectName("Card")
@@ -1350,11 +1413,13 @@ class MainWindow(QMainWindow):
         self.ai_context_ports = QLabel("")
         self.ai_context_score = QLabel("")
         self.ai_context_focus = QLabel("")
+        self.ai_context_changes = QLabel("")
         for label in (
             self.ai_context_hosts,
             self.ai_context_ports,
             self.ai_context_score,
             self.ai_context_focus,
+            self.ai_context_changes,
         ):
             label.setStyleSheet("color: #cbd5e1;" if self.current_theme == "dark" else "color: #334155;")
             label.setWordWrap(True)
@@ -1364,6 +1429,7 @@ class MainWindow(QMainWindow):
         context_layout.addWidget(self.ai_context_ports)
         context_layout.addWidget(self.ai_context_score)
         context_layout.addWidget(self.ai_context_focus)
+        context_layout.addWidget(self.ai_context_changes)
 
         left_column.addWidget(config_card)
         left_column.addLayout(actions)
@@ -1503,6 +1569,47 @@ class MainWindow(QMainWindow):
         thresholds_layout.addRow("Managed Host Limit", self.managed_hosts_limit_input)
         thresholds_layout.addRow("Large Network Threshold", self.large_network_threshold_input)
 
+        auto_scan_card = QFrame()
+        auto_scan_card.setObjectName("Card")
+        auto_scan_section_label = QLabel("Auto Scan")
+        auto_scan_section_label.setStyleSheet("font-size: 11pt; font-weight: 800;")
+        auto_scan_layout = QFormLayout(auto_scan_card)
+        auto_scan_layout.setHorizontalSpacing(16)
+        auto_scan_layout.setVerticalSpacing(16)
+
+        self.auto_scan_enabled_checkbox = QCheckBox("Enable scheduled network scans")
+        self.auto_scan_interval_spinbox = QSpinBox()
+        self.auto_scan_interval_spinbox.setMinimumHeight(36)
+        self.auto_scan_interval_spinbox.setRange(1, 1440)
+        self.auto_scan_interval_spinbox.setValue(15)
+        self.auto_scan_interval_unit_combo = QComboBox()
+        self.auto_scan_interval_unit_combo.setMinimumHeight(36)
+        self.auto_scan_interval_unit_combo.addItem("Minutes", "minutes")
+        self.auto_scan_interval_unit_combo.addItem("Seconds", "seconds")
+        self.auto_scan_interval_unit_combo.currentIndexChanged.connect(self._update_auto_scan_interval_bounds)
+        self.auto_scan_mode_combo = QComboBox()
+        self.auto_scan_mode_combo.setMinimumHeight(36)
+        self.auto_scan_mode_combo.addItem("Quick", "quick")
+        self.auto_scan_mode_combo.addItem("Balanced", "balanced")
+        self.auto_scan_mode_combo.addItem("Deep", "deep")
+
+        interval_row = QWidget()
+        interval_row_layout = QHBoxLayout(interval_row)
+        interval_row_layout.setContentsMargins(0, 0, 0, 0)
+        interval_row_layout.setSpacing(10)
+        interval_row_layout.addWidget(self.auto_scan_interval_spinbox)
+        interval_row_layout.addWidget(self.auto_scan_interval_unit_combo)
+        interval_row_layout.addStretch(1)
+
+        self.auto_report_checkbox = QCheckBox("Generate a PDF report after each automatic scan")
+        self.auto_snapshot_checkbox = QCheckBox("Export a JSON snapshot after each automatic scan")
+        auto_scan_layout.addRow("Scheduled Scans", self.auto_scan_enabled_checkbox)
+        auto_scan_layout.addRow("Interval", interval_row)
+        auto_scan_layout.addRow("Auto Scan Mode", self.auto_scan_mode_combo)
+        auto_scan_layout.addRow("Scheduled Reports", self.auto_report_checkbox)
+        auto_scan_layout.addRow("Scheduled Snapshot", self.auto_snapshot_checkbox)
+        self._update_auto_scan_interval_bounds()
+
         actions = QHBoxLayout()
         self.settings_status = QLabel("Update the company profile and thresholds, then save your changes.")
         self.settings_status.setStyleSheet("color: #64748b;")
@@ -1518,6 +1625,8 @@ class MainWindow(QMainWindow):
         company_layout.addLayout(logo_actions)
         company_layout.addWidget(thresholds_section_label)
         company_layout.addWidget(thresholds_card)
+        company_layout.addWidget(auto_scan_section_label)
+        company_layout.addWidget(auto_scan_card)
         ai_card = QFrame()
         ai_card.setObjectName("Card")
         ai_section_label = QLabel("AI Settings")
@@ -1605,16 +1714,30 @@ class MainWindow(QMainWindow):
         for field in (self.new_username_input, self.new_password_input, self.new_role_combo):
             field.setMinimumHeight(36)
 
-        create_user_button = QPushButton("Create User")
-        create_user_button.clicked.connect(self._create_user)
+        self.create_user_button = QPushButton("Create User")
+        self.create_user_button.clicked.connect(self._create_user)
         self.toggle_user_button = QPushButton("Enable / Disable Selected")
         self.toggle_user_button.clicked.connect(self._toggle_selected_user)
+        self.change_password_input = QLineEdit()
+        self.change_password_input.setPlaceholderText("New password for selected user")
+        self.change_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.change_password_confirm_input = QLineEdit()
+        self.change_password_confirm_input.setPlaceholderText("Confirm new password")
+        self.change_password_confirm_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.change_password_button = QPushButton("Change Selected Password")
+        self.change_password_button.clicked.connect(self._change_selected_user_password)
+
+        for field in (self.change_password_input, self.change_password_confirm_input):
+            field.setMinimumHeight(36)
 
         add_user_form.addWidget(self.new_username_input, 0, 0)
         add_user_form.addWidget(self.new_password_input, 0, 1)
         add_user_form.addWidget(self.new_role_combo, 0, 2)
-        add_user_form.addWidget(create_user_button, 0, 3)
+        add_user_form.addWidget(self.create_user_button, 0, 3)
         add_user_form.addWidget(self.toggle_user_button, 0, 4)
+        add_user_form.addWidget(self.change_password_input, 1, 0, 1, 2)
+        add_user_form.addWidget(self.change_password_confirm_input, 1, 2, 1, 2)
+        add_user_form.addWidget(self.change_password_button, 1, 4)
 
         self.users_status = QLabel("Manage local accounts from this section.")
         self.users_status.setStyleSheet("color: #64748b;")
@@ -1727,17 +1850,24 @@ class MainWindow(QMainWindow):
     def _apply_button_styles(self) -> None:
         for button_name, role in (
             ("theme_button", "secondary"),
+            ("detect_network_button", "secondary"),
             ("scan_button", "primary"),
             ("cancel_scan_button", "secondary"),
             ("export_devices_button", "ghost"),
             ("port_scan_button", "primary"),
             ("cancel_port_scan_button", "secondary"),
             ("export_ports_button", "ghost"),
+            ("generate_report_button", "primary"),
+            ("export_reports_button", "ghost"),
+            ("export_snapshot_button", "ghost"),
             ("ai_analyze_button", "primary"),
             ("ai_clear_button", "secondary"),
             ("ai_settings_save_button", "secondary"),
             ("settings_save_button", "primary"),
             ("upload_logo_button", "secondary"),
+            ("create_user_button", "primary"),
+            ("toggle_user_button", "secondary"),
+            ("change_password_button", "secondary"),
         ):
             button = getattr(self, button_name, None)
             if button is not None:
@@ -1748,6 +1878,9 @@ class MainWindow(QMainWindow):
             "ai_fix_first_button",
             "ai_suspicious_host_button",
             "ai_explain_score_button",
+            "ai_explain_host_button",
+            "ai_remediation_plan_button",
+            "ai_summarize_changes_button",
             "ai_close_port_button",
             "ai_block_ip_button",
         ):
@@ -1845,7 +1978,9 @@ class MainWindow(QMainWindow):
     def _change_page(self, index: int) -> None:
         self.stack.setCurrentIndex(index)
         if index == 9:
-            self._load_settings_values()
+            self._load_settings_values(apply_auto_scan=False)
+
+
 
     def _load_initial_state(self) -> None:
         self._load_saved_port_results()
@@ -1853,7 +1988,7 @@ class MainWindow(QMainWindow):
             (alert.type_alert, alert.description)
             for alert in self.database.fetch_alerts(limit=500)
         }
-        self._load_settings_values()
+        self._load_settings_values(apply_auto_scan=True)
         self._refresh_scan_table()
         self._refresh_host_selector()
         self._refresh_topology()
@@ -1862,9 +1997,10 @@ class MainWindow(QMainWindow):
         self._refresh_events_table()
         self._refresh_reports_table()
         self._recalculate_security()
+        self._update_change_summary_labels()
         self._update_dashboard_cards()
 
-    def _load_settings_values(self) -> None:
+    def _load_settings_values(self, apply_auto_scan: bool = False) -> None:
         self.security_settings = self.database.fetch_security_settings()
         self.company_name_input.setText(self.database.get_setting("company_name", "NetSecure Enterprise"))
         self.department_input.setText(self.database.get_setting("department", "Security Operations Center"))
@@ -1878,6 +2014,40 @@ class MainWindow(QMainWindow):
         )
         self.managed_hosts_limit_input.setText(str(self.security_settings.managed_hosts_limit))
         self.large_network_threshold_input.setText(str(self.security_settings.large_network_threshold))
+
+        auto_scan_enabled = self.database.get_setting("auto_scan_enabled", "0") == "1"
+        auto_scan_interval_value = self.database.get_int_setting("auto_scan_interval_value", 15)
+        auto_scan_interval_unit = self.database.get_setting("auto_scan_interval_unit", "minutes")
+        auto_scan_mode = self.database.get_setting("auto_scan_mode", "quick")
+        self.auto_report_enabled = self.database.get_setting("scheduled_report_enabled", "0") == "1"
+        self.auto_snapshot_export_enabled = self.database.get_setting("scheduled_snapshot_enabled", "0") == "1"
+
+        normalized_unit = auto_scan_interval_unit if auto_scan_interval_unit in {"seconds", "minutes"} else "minutes"
+        normalized_mode = auto_scan_mode if auto_scan_mode in {"quick", "balanced", "deep"} else "quick"
+
+        if hasattr(self, "auto_scan_interval_unit_combo"):
+            unit_index = self.auto_scan_interval_unit_combo.findData(normalized_unit)
+            self.auto_scan_interval_unit_combo.setCurrentIndex(unit_index if unit_index >= 0 else 0)
+            self._update_auto_scan_interval_bounds()
+            self.auto_scan_interval_spinbox.setValue(auto_scan_interval_value)
+            self.auto_scan_enabled_checkbox.setChecked(auto_scan_enabled)
+            mode_index = self.auto_scan_mode_combo.findData(normalized_mode)
+            self.auto_scan_mode_combo.setCurrentIndex(mode_index if mode_index >= 0 else 0)
+            self.auto_report_checkbox.setChecked(self.auto_report_enabled)
+            self.auto_snapshot_checkbox.setChecked(self.auto_snapshot_export_enabled)
+
+        if apply_auto_scan:
+            self._apply_auto_scan_config(auto_scan_enabled, auto_scan_interval_value, normalized_unit, normalized_mode)
+        else:
+            self.auto_scan_enabled = auto_scan_enabled
+            self.auto_scan_mode = normalized_mode
+            if normalized_unit == "seconds":
+                self.auto_scan_interval_seconds = max(10, auto_scan_interval_value)
+            else:
+                self.auto_scan_interval_seconds = max(60, auto_scan_interval_value * 60)
+            if hasattr(self, "auto_scan_badge"):
+                self._refresh_auto_scan_status()
+
         if hasattr(self, "ai_api_key_input"):
             self.ai_api_key_input.setText(self.database.get_setting("openrouter_api_key", ""))
             saved_model = self.database.get_setting("openrouter_model", "openai/gpt-4o-mini")
@@ -1888,10 +2058,213 @@ class MainWindow(QMainWindow):
             if hasattr(self, "ai_model_hint"):
                 self.ai_model_hint.setText(f"Model: {saved_model} | API key is managed in Settings.")
             self._sync_ai_mode_ui()
+
         self._update_header_branding()
         if hasattr(self, "users_table"):
             self._refresh_users_table()
+        self._apply_role_permissions()
+        self._update_change_summary_labels()
 
+    def _is_admin_user(self) -> bool:
+        self.current_user_role = self.database.fetch_user_role(self.username)
+        return self.current_user_role == "Admin"
+
+    def _ensure_admin_access(self, section_name: str) -> bool:
+        if self._is_admin_user():
+            return True
+        QMessageBox.warning(self, section_name, "Only Admin accounts can modify this section.")
+        return False
+
+    def _apply_role_permissions(self) -> None:
+        is_admin = self._is_admin_user()
+
+        for field_name in (
+            "company_name_input",
+            "department_input",
+            "site_input",
+            "owner_input",
+            "support_email_input",
+            "support_phone_input",
+            "logo_path_input",
+            "bandwidth_threshold_input",
+            "managed_hosts_limit_input",
+            "large_network_threshold_input",
+            "ai_api_key_input",
+            "ai_model_input",
+            "new_username_input",
+            "new_password_input",
+            "change_password_input",
+            "change_password_confirm_input",
+        ):
+            field = getattr(self, field_name, None)
+            if field is not None:
+                field.setEnabled(is_admin)
+
+        for widget_name in (
+            "auto_scan_enabled_checkbox",
+            "auto_scan_interval_spinbox",
+            "auto_scan_interval_unit_combo",
+            "auto_scan_mode_combo",
+            "auto_report_checkbox",
+            "auto_snapshot_checkbox",
+            "new_role_combo",
+        ):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                widget.setEnabled(is_admin)
+
+        for button_name in (
+            "settings_save_button",
+            "upload_logo_button",
+            "ai_settings_save_button",
+            "create_user_button",
+            "toggle_user_button",
+            "change_password_button",
+        ):
+            button = getattr(self, button_name, None)
+            if button is not None:
+                button.setEnabled(is_admin)
+
+        if hasattr(self, "settings_status"):
+            self.settings_status.setText(
+                "Update the company profile and thresholds, then save your changes."
+                if is_admin
+                else "Viewer mode: company, threshold, and auto scan settings are read-only."
+            )
+        if hasattr(self, "ai_settings_status"):
+            self.ai_settings_status.setText(
+                "Store your OpenRouter API key and model here once."
+                if is_admin
+                else "Viewer mode: AI credentials are read-only."
+            )
+        if hasattr(self, "users_status"):
+            self.users_status.setText(
+                "Manage local accounts from this section."
+                if is_admin
+                else "Viewer mode: local user administration is read-only."
+            )
+
+    def _format_change_targets(self, values: set[str], limit: int = 3) -> str:
+        ordered = sorted(value for value in values if value)
+        if not ordered:
+            return ""
+        preview = ", ".join(ordered[:limit])
+        remaining = len(ordered) - limit
+        if remaining > 0:
+            preview += f", +{remaining} more"
+        return preview
+
+    def _summarize_device_changes(self, previous_devices: list[Device], current_devices: list[Device]) -> str:
+        previous_map = {device.ip_address: device for device in previous_devices}
+        current_map = {device.ip_address: device for device in current_devices}
+
+        if not previous_map:
+            if current_map:
+                return f"Initial network baseline captured: {len(current_map)} active device(s) recorded."
+            return "Initial network baseline captured: no active devices were detected."
+
+        previous_ips = set(previous_map)
+        current_ips = set(current_map)
+        new_ips = current_ips - previous_ips
+        missing_ips = previous_ips - current_ips
+        updated_count = 0
+
+        for ip_address in sorted(previous_ips & current_ips):
+            previous = previous_map[ip_address]
+            current = current_map[ip_address]
+            previous_signature = (
+                previous.mac_address,
+                previous.hostname,
+                previous.vendor,
+                previous.device_type,
+                previous.os_guess,
+                previous.status,
+            )
+            current_signature = (
+                current.mac_address,
+                current.hostname,
+                current.vendor,
+                current.device_type,
+                current.os_guess,
+                current.status,
+            )
+            if previous_signature != current_signature:
+                updated_count += 1
+
+        parts: list[str] = []
+        if new_ips:
+            parts.append(f"New devices: {len(new_ips)} ({self._format_change_targets(new_ips)})")
+        if missing_ips:
+            parts.append(f"Missing since last scan: {len(missing_ips)} ({self._format_change_targets(missing_ips)})")
+        if updated_count:
+            parts.append(f"Fingerprint updates: {updated_count} host(s)")
+        if not parts:
+            return "No device changes detected since the last network scan."
+        return "; ".join(parts) + "."
+
+    def _summarize_port_changes(
+        self,
+        ip_address: str,
+        previous_results: list[PortScanResult],
+        current_results: list[PortScanResult],
+    ) -> str:
+        previous_map = {result.port: result for result in previous_results}
+        current_map = {result.port: result for result in current_results}
+
+        if not previous_map:
+            if current_map:
+                return f"Initial port baseline for {ip_address}: {len(current_map)} open port(s) recorded."
+            return f"Initial port baseline for {ip_address}: no open ports recorded."
+
+        previous_ports = set(previous_map)
+        current_ports = set(current_map)
+        new_ports = {str(port) for port in sorted(current_ports - previous_ports)}
+        closed_ports = {str(port) for port in sorted(previous_ports - current_ports)}
+        updated_count = 0
+
+        for port in sorted(previous_ports & current_ports):
+            previous = previous_map[port]
+            current = current_map[port]
+            previous_signature = (previous.service, previous.state, previous.risk_level, previous.banner or "")
+            current_signature = (current.service, current.state, current.risk_level, current.banner or "")
+            if previous_signature != current_signature:
+                updated_count += 1
+
+        parts: list[str] = []
+        if new_ports:
+            parts.append(f"New open ports: {self._format_change_targets(new_ports, limit=4)}")
+        if closed_ports:
+            parts.append(f"Closed ports: {self._format_change_targets(closed_ports, limit=4)}")
+        if updated_count:
+            parts.append(f"Service or risk updates: {updated_count} port(s)")
+        if not parts:
+            return f"No port changes detected for {ip_address}."
+        return f"{ip_address}: " + "; ".join(parts) + "."
+
+    def _combined_change_summary(self) -> str:
+        defaults = {
+            "No device comparison available yet.",
+            "No port comparison available yet.",
+            "No scan comparison available yet.",
+        }
+        parts = [
+            summary.strip()
+            for summary in (self.latest_network_change_summary, self.latest_port_change_summary)
+            if summary and summary.strip() and summary.strip() not in defaults
+        ]
+        if not parts:
+            return "No scan comparison available yet."
+        return " | ".join(parts)
+
+    def _update_change_summary_labels(self) -> None:
+        self.latest_combined_change_summary = self._combined_change_summary()
+        comparison_text = f"Latest comparison: {self.latest_combined_change_summary}"
+        if hasattr(self, "scan_comparison_label"):
+            self.scan_comparison_label.setText(comparison_text)
+        if hasattr(self, "history_compare_label"):
+            self.history_compare_label.setText(comparison_text)
+        if hasattr(self, "ai_context_changes"):
+            self.ai_context_changes.setText(comparison_text)
     def _load_saved_port_results(self) -> None:
         self.port_results_by_ip.clear()
         for row in self.database.fetch_port_scan_summary():
@@ -1929,31 +2302,178 @@ class MainWindow(QMainWindow):
             self._set_status_badge(self.scan_status_badge, self.scan_status_badge.text().strip().lower() or "ready")
         if hasattr(self, "port_status_badge"):
             self._set_status_badge(self.port_status_badge, self.port_status_badge.text().strip().lower() or "ready")
+        if hasattr(self, "auto_scan_badge"):
+            self._refresh_auto_scan_status()
         self._refresh_alerts_table()
         self._refresh_port_table(self.host_selector.currentText())
         self._refresh_events_table()
         self._refresh_topology()
 
+    def _detect_current_network_target(self, *_args) -> None:
+        target = self.network_scanner.suggest_target()
+        self.target_input.setText(target)
+        self.scan_status.setText(f"Current connected network detected: {target}")
+        self._show_toast("Current network detected", "success")
+
     def _launch_network_scan(self, *_args) -> None:
+        self._begin_network_scan("manual")
+
+    def _begin_network_scan(self, trigger: str = "manual") -> bool:
+        if self.active_network_scan_thread is not None:
+            if trigger == "auto":
+                self._refresh_auto_scan_status("An active scan is already running. The next automatic cycle will start later.")
+                return False
+            QMessageBox.information(self, "Network Scan", "A network scan is already running.")
+            return False
+
         target = self.target_input.text().strip()
-        mode = str(self.network_mode_selector.currentData() or "balanced")
+        mode = self.auto_scan_mode if trigger == "auto" else str(self.network_mode_selector.currentData() or "balanced")
+        scan_label = "Auto scan" if trigger == "auto" else "Network scan"
+
+        self.auto_scan_timer.stop()
+        self.auto_scan_countdown_timer.stop()
+        self.auto_scan_seconds_remaining = 0
+
         self.scan_button.setEnabled(False)
         self.cancel_scan_button.setEnabled(True)
         self.scan_progress.show()
         self.scan_progress.setValue(0)
-        self.scan_progress_detail.setText("Preparing network scan...")
+        self.scan_progress_detail.setText("Preparing automatic network scan..." if trigger == "auto" else "Preparing network scan...")
         self._set_status_badge(self.scan_status_badge, "running")
-        self.scan_status.setText(f"Network scan in progress on {target} ({mode})...")
-        self._log_event("Network Discovery", "Info", f"Network scan started on {target} in {mode} mode.")
+        self.scan_status.setText(f"{scan_label} in progress on {target} ({mode})...")
+        self._log_event("Network Discovery", "Info", f"{scan_label} started on {target} in {mode} mode.")
         worker = NetworkScanThread(self.network_scanner, target, mode)
         self._workers.append(worker)
         self.active_network_scan_thread = worker
         worker.progress.connect(self._handle_network_scan_progress)
-        worker.result_ready.connect(lambda result, ctx=(target, mode): self._handle_network_scan_result(result, ctx))
-        worker.cancelled.connect(lambda result, ctx=(target, mode): self._handle_network_scan_cancelled(result, ctx))
+        worker.result_ready.connect(lambda result, ctx=(target, mode, trigger): self._handle_network_scan_result(result, ctx))
+        worker.cancelled.connect(lambda result, ctx=(target, mode, trigger): self._handle_network_scan_cancelled(result, ctx))
         worker.error.connect(self._handle_worker_error)
         worker.finished.connect(lambda: self._cleanup_worker(worker))
         worker.start()
+
+        self._refresh_auto_scan_status()
+        return True
+
+    def _current_auto_scan_interval_label(self) -> str:
+        if self.auto_scan_interval_seconds % 60 == 0:
+            value = max(1, self.auto_scan_interval_seconds // 60)
+            unit = "minute" if value == 1 else "minutes"
+            return f"{value} {unit}"
+        value = max(10, self.auto_scan_interval_seconds)
+        unit = "second" if value == 1 else "seconds"
+        return f"{value} {unit}"
+
+    def _update_auto_scan_interval_bounds(self, *_args) -> None:
+        if not hasattr(self, "auto_scan_interval_unit_combo"):
+            return
+        unit = str(self.auto_scan_interval_unit_combo.currentData() or "minutes")
+        current_value = self.auto_scan_interval_spinbox.value()
+        if unit == "seconds":
+            self.auto_scan_interval_spinbox.setRange(10, 3600)
+            self.auto_scan_interval_spinbox.setSingleStep(10)
+            self.auto_scan_interval_spinbox.setSuffix(" sec")
+        else:
+            self.auto_scan_interval_spinbox.setRange(1, 1440)
+            self.auto_scan_interval_spinbox.setSingleStep(1)
+            self.auto_scan_interval_spinbox.setSuffix(" min")
+        self.auto_scan_interval_spinbox.setValue(max(self.auto_scan_interval_spinbox.minimum(), current_value))
+
+    def _apply_auto_scan_config(self, enabled: bool, interval_value: int, interval_unit: str, mode: str) -> None:
+        normalized_unit = interval_unit if interval_unit in {"seconds", "minutes"} else "minutes"
+        self.auto_scan_enabled = enabled
+        self.auto_scan_mode = mode if mode in {"quick", "balanced", "deep"} else "quick"
+        if normalized_unit == "seconds":
+            self.auto_scan_interval_seconds = max(10, interval_value)
+        else:
+            self.auto_scan_interval_seconds = max(60, interval_value * 60)
+
+        self.auto_scan_timer.stop()
+        self.auto_scan_countdown_timer.stop()
+        self.auto_scan_seconds_remaining = 0
+
+        if self.auto_scan_enabled and self.active_network_scan_thread is None:
+            self._schedule_next_auto_scan()
+        else:
+            self._refresh_auto_scan_status()
+
+    def _schedule_next_auto_scan(self, delay_seconds: int | None = None) -> None:
+        if not self.auto_scan_enabled:
+            self.auto_scan_timer.stop()
+            self.auto_scan_countdown_timer.stop()
+            self.auto_scan_seconds_remaining = 0
+            self._refresh_auto_scan_status()
+            return
+
+        seconds = max(10, delay_seconds if delay_seconds is not None else self.auto_scan_interval_seconds)
+        self.auto_scan_seconds_remaining = seconds
+        self.auto_scan_timer.stop()
+        self.auto_scan_timer.start(seconds * 1000)
+        self.auto_scan_countdown_timer.start()
+        self._refresh_auto_scan_status()
+
+    def _handle_auto_scan_timeout(self) -> None:
+        self.auto_scan_countdown_timer.stop()
+        self.auto_scan_seconds_remaining = 0
+        if not self.auto_scan_enabled:
+            self._refresh_auto_scan_status()
+            return
+        if self.active_network_scan_thread is not None:
+            self._schedule_next_auto_scan()
+            self._refresh_auto_scan_status("An active scan was still running, so the next automatic cycle was rescheduled.")
+            return
+        if not self._begin_network_scan("auto"):
+            self._schedule_next_auto_scan()
+
+    def _tick_auto_scan_countdown(self) -> None:
+        if not self.auto_scan_enabled:
+            self.auto_scan_countdown_timer.stop()
+            self.auto_scan_seconds_remaining = 0
+            self._refresh_auto_scan_status()
+            return
+
+        if self.auto_scan_seconds_remaining > 0:
+            self.auto_scan_seconds_remaining -= 1
+        if self.auto_scan_seconds_remaining <= 0 and not self.auto_scan_timer.isActive():
+            self.auto_scan_countdown_timer.stop()
+        self._refresh_auto_scan_status()
+
+    def _format_countdown(self, total_seconds: int) -> str:
+        total_seconds = max(total_seconds, 0)
+        minutes, seconds = divmod(total_seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            return f"{hours}h {minutes:02d}m {seconds:02d}s"
+        if minutes:
+            return f"{minutes}m {seconds:02d}s"
+        return f"{seconds}s"
+
+    def _refresh_auto_scan_status(self, override_message: str | None = None) -> None:
+        if not hasattr(self, "auto_scan_badge") or not hasattr(self, "auto_scan_status"):
+            return
+
+        if not self.auto_scan_enabled:
+            self.auto_scan_badge.setText("AUTO SCAN OFF")
+            self.auto_scan_badge.setStyleSheet(self._button_style("ghost"))
+            self.auto_scan_status.setText("Automatic network scans are disabled.")
+            return
+
+        self.auto_scan_badge.setText("AUTO SCAN ON")
+        self.auto_scan_badge.setStyleSheet(self._button_style("secondary"))
+
+        if override_message:
+            self.auto_scan_status.setText(override_message)
+            return
+
+        interval_label = self._current_auto_scan_interval_label()
+        mode_label = self.auto_scan_mode.title()
+        if self.active_network_scan_thread is not None:
+            message = f"Auto scan is enabled | every {interval_label} in {mode_label} mode. The next cycle will be scheduled after the current scan."
+        elif self.auto_scan_seconds_remaining > 0:
+            message = f"Auto scan is enabled | every {interval_label} in {mode_label} mode. Next scan in {self._format_countdown(self.auto_scan_seconds_remaining)}."
+        else:
+            message = f"Auto scan is enabled | every {interval_label} in {mode_label} mode."
+        self.auto_scan_status.setText(message)
 
     def _cancel_network_scan(self, *_args) -> None:
         if self.active_network_scan_thread is None:
@@ -1973,15 +2493,23 @@ class MainWindow(QMainWindow):
             f"{current}/{total} host(s) tested | {active} active | latest: {current_ip}"
         )
 
-    def _handle_network_scan_result(self, result: list[Device], context: tuple[str, str]) -> None:
-        target, mode = context
+
+
+    def _handle_network_scan_result(self, result: list[Device], context: tuple[str, str, str]) -> None:
+        target, mode, trigger = context
         self.scan_button.setEnabled(True)
         self.cancel_scan_button.setEnabled(False)
         self.active_network_scan_thread = None
         self.scan_progress.setValue(100)
-        known_before = {device.ip_address for device in self.database.fetch_devices()}
+
+        previous_devices = list(self.devices)
+        known_before = {device.ip_address for device in previous_devices}
         self.devices = result
         self.database.record_devices(result)
+
+        self.latest_network_change_summary = self._summarize_device_changes(previous_devices, result)
+        self._update_change_summary_labels()
+
         alerts = self.analyzer.generate_alerts(
             result,
             self._all_port_results(),
@@ -1991,30 +2519,59 @@ class MainWindow(QMainWindow):
         )
         self._persist_new_alerts(alerts)
         self._recalculate_security()
+
         ping_hits = sum(1 for device in result if "Ping" in device.discovery_method)
         arp_hits = sum(1 for device in result if "ARP" in device.discovery_method)
         tcp_hits = sum(1 for device in result if "TCP:" in device.discovery_method)
-        summary = (
+        summary_core = (
             f"{len(result)} active host(s) detected | "
             f"ping={ping_hits}, arp={arp_hits}, tcp={tcp_hits}"
         )
+        summary = f"{summary_core} | {self.latest_network_change_summary}"
         self.database.record_scan_run("Network Scan", target, summary, self.latest_assessment.score)
+
+        scan_label = "Auto scan" if trigger == "auto" else "Network scan"
         self._log_event(
             "Network Discovery",
             "Success",
-            f"Scan completed on {target} in {mode} mode with {len(result)} active hosts.",
+            f"{scan_label} completed on {target} in {mode} mode with {len(result)} active hosts.",
         )
         self._refresh_scan_table()
         self._refresh_host_selector()
         self._refresh_topology()
         self._refresh_history_table()
         self._set_status_badge(self.scan_status_badge, "completed")
-        self.scan_progress_detail.setText("Scan completed.")
-        self.scan_status.setText(f"{summary}.")
-        self._show_toast("Scan completed successfully", "success")
+        self.scan_progress_detail.setText("Automatic scan completed." if trigger == "auto" else "Scan completed.")
+        self.scan_status.setText(f"{summary_core}.")
 
-    def _handle_network_scan_cancelled(self, result: list[Device], context: tuple[str, str]) -> None:
-        target, mode = context
+        if self.latest_network_change_summary == "No device changes detected since the last network scan.":
+            self._show_toast(
+                "Auto scan completed successfully" if trigger == "auto" else "Scan completed successfully",
+                "success",
+            )
+        else:
+            self._show_toast(self.latest_network_change_summary, "info")
+
+        if trigger == "auto":
+            if self.auto_report_enabled:
+                try:
+                    self._generate_report(silent=True, reason="Scheduled PDF report")
+                except Exception as exc:
+                    self._log_event("Reporting", "Error", f"Scheduled PDF report failed: {exc}")
+                    self._show_toast("Scheduled PDF report failed", "critical")
+            if self.auto_snapshot_export_enabled:
+                try:
+                    self._export_snapshot_json(silent=True, reason="Scheduled JSON snapshot")
+                except Exception as exc:
+                    self._log_event("Export", "Error", f"Scheduled JSON snapshot failed: {exc}")
+                    self._show_toast("Scheduled JSON snapshot failed", "critical")
+
+        if self.auto_scan_enabled:
+            self._schedule_next_auto_scan()
+        else:
+            self._refresh_auto_scan_status()
+    def _handle_network_scan_cancelled(self, result: list[Device], context: tuple[str, str, str]) -> None:
+        target, mode, trigger = context
         self.scan_button.setEnabled(True)
         self.cancel_scan_button.setEnabled(False)
         self.active_network_scan_thread = None
@@ -2027,12 +2584,17 @@ class MainWindow(QMainWindow):
         self.scan_progress.hide()
         self._set_status_badge(self.scan_status_badge, "cancelled")
         self.scan_progress_detail.setText("Network scan cancelled by the user.")
-        self.scan_status.setText(f"Network scan cancelled on {target} ({mode}).")
+        scan_label = "Auto scan" if trigger == "auto" else "Network scan"
+        self.scan_status.setText(f"{scan_label} cancelled on {target} ({mode}).")
         self._log_event(
             "Network Discovery",
             "Info",
-            f"Network scan cancelled on {target} ({mode}) with {len(result)} partial result(s).",
+            f"{scan_label} cancelled on {target} ({mode}) with {len(result)} partial result(s).",
         )
+        if self.auto_scan_enabled:
+            self._schedule_next_auto_scan()
+        else:
+            self._refresh_auto_scan_status()
 
     def _launch_port_scan(self, *_args) -> None:
         ip_address = self.host_selector.currentText().strip()
@@ -2071,14 +2633,23 @@ class MainWindow(QMainWindow):
             f"Ports tested: {current}/{total} | open: {open_count} | latest port: {current_port}"
         )
 
+
+
     def _handle_port_scan_result(self, result: list[PortScanResult], context: tuple[str, str]) -> None:
         ip_address, mode_label = context
+        previous_results = list(self.port_results_by_ip.get(ip_address, []))
+        previous_critical_ports = {item.port for item in previous_results if item.risk_level == "Critical"}
+
         self.port_scan_button.setEnabled(True)
         self.cancel_port_scan_button.setEnabled(False)
         self.active_port_scan_thread = None
         self.port_results_by_ip[ip_address] = result
         self.database.record_port_scan(ip_address, result)
         self._refine_device_after_port_scan(ip_address, result)
+
+        self.latest_port_change_summary = self._summarize_port_changes(ip_address, previous_results, result)
+        self._update_change_summary_labels()
+
         alerts = self.analyzer.generate_alerts(
             self.devices,
             self._all_port_results(),
@@ -2088,7 +2659,9 @@ class MainWindow(QMainWindow):
         )
         self._persist_new_alerts(alerts)
         self._recalculate_security()
-        summary = f"{len(result)} open port(s) | mode={mode_label}"
+
+        summary_core = f"{len(result)} open port(s) | mode={mode_label}"
+        summary = f"{summary_core} | {self.latest_port_change_summary}"
         self.database.record_scan_run("Port Scan", ip_address, summary, self.latest_assessment.score)
         self._log_event(
             "Port Scanner",
@@ -2099,13 +2672,19 @@ class MainWindow(QMainWindow):
         self._refresh_topology()
         self._refresh_history_table()
         self._set_status_badge(self.port_status_badge, "completed")
-        self.port_status.setText(f"{summary} on {ip_address}.")
-        risky_ports = sum(1 for item in result if item.risk_level == "Critical")
-        if risky_ports:
-            self._show_toast(f"{risky_ports} critical port(s) detected on {ip_address}", "critical")
-        else:
-            self._show_toast("Port scan completed successfully", "success")
+        self.port_status.setText(f"{summary_core} on {ip_address}.")
 
+        current_critical_ports = {item.port for item in result if item.risk_level == "Critical"}
+        new_critical_ports = sorted(current_critical_ports - previous_critical_ports)
+        if new_critical_ports:
+            listed_ports = ", ".join(str(port) for port in new_critical_ports[:4])
+            if len(new_critical_ports) > 4:
+                listed_ports += f", +{len(new_critical_ports) - 4} more"
+            self._show_toast(f"New critical port(s) on {ip_address}: {listed_ports}", "critical")
+        elif self.latest_port_change_summary == f"No port changes detected for {ip_address}.":
+            self._show_toast("Port scan completed successfully", "success")
+        else:
+            self._show_toast(self.latest_port_change_summary, "info")
     def _handle_port_scan_cancelled(self, result: list[PortScanResult], context: tuple[str, str]) -> None:
         ip_address, mode_label = context
         self.port_scan_button.setEnabled(True)
@@ -2134,27 +2713,52 @@ class MainWindow(QMainWindow):
             self.database.record_devices([refined_device])
             break
 
-    def _generate_report(self, *_args) -> None:
+
+    def _generate_report(self, *_args, silent: bool = False, reason: str = "Manual PDF report") -> Path | None:
         alerts = self.database.fetch_alerts(limit=15)
+        comparison_summary = self._combined_change_summary()
         pdf_path = self.reporter.generate(
             self.devices,
             self._all_port_results(),
             self.latest_assessment,
             alerts,
             self.database.fetch_company_profile(),
+            comparison_summary=comparison_summary,
         )
         self.database.record_report(pdf_path.name, self.latest_assessment.score)
         self.database.record_scan_run(
             "Report",
             pdf_path.name,
-            f"PDF report generated with score {self.latest_assessment.score}",
+            f"PDF report generated with score {self.latest_assessment.score} | {comparison_summary}",
             self.latest_assessment.score,
         )
-        self._log_event("Reporting", "Success", f"PDF report generated: {pdf_path.name}.")
+        self._log_event("Reporting", "Success", f"{reason}: {pdf_path.name}.")
         self._refresh_reports_table()
         self._refresh_history_table()
         self.report_status.setText(f"Report generated: {pdf_path}")
-        QMessageBox.information(self, "Report", f"PDF report generated:\n{Path(pdf_path).resolve()}")
+        if silent:
+            self._show_toast(f"{reason} generated", "success")
+        else:
+            QMessageBox.information(self, "Report", f"PDF report generated:\n{pdf_path.resolve()}")
+        return pdf_path
+
+    def _export_snapshot_json(self, *_args, silent: bool = False, reason: str = "Manual JSON snapshot") -> Path | None:
+        snapshot_path = self.exporter.export_snapshot_json(
+            self.devices,
+            self._all_port_results(),
+            self.database.fetch_alerts(limit=50),
+            self.database.fetch_scan_runs(limit=100),
+            self.latest_assessment,
+            self.database.fetch_company_profile(),
+            self._combined_change_summary(),
+        )
+        self.report_status.setText(f"JSON snapshot generated: {snapshot_path}")
+        self._log_event("Export", "Success", f"{reason}: {snapshot_path.name}.")
+        if silent:
+            self._show_toast(f"{reason} generated", "success")
+        else:
+            QMessageBox.information(self, "JSON Snapshot", f"JSON snapshot generated:\n{snapshot_path.resolve()}")
+        return snapshot_path
 
     def _start_worker(self, callback, args: list[object], result_handler, extra_value: object | None = None) -> None:
         worker = WorkerThread(callback, *args)
@@ -2172,6 +2776,7 @@ class MainWindow(QMainWindow):
             self._workers.remove(worker)
 
     def _handle_worker_error(self, message: str) -> None:
+        network_scan_failed = self.active_network_scan_thread is not None
         self.scan_button.setEnabled(True)
         self.cancel_scan_button.setEnabled(False)
         self.port_scan_button.setEnabled(True)
@@ -2194,6 +2799,9 @@ class MainWindow(QMainWindow):
         self.scan_status.setText("Scan failed.")
         self.port_status.setText("Scan failed.")
         self._log_event("System", "Error", f"Operation interrupted: {message}")
+        if network_scan_failed and self.auto_scan_enabled:
+            self._schedule_next_auto_scan()
+            self._refresh_auto_scan_status("The previous automatic network scan failed. The next cycle has been rescheduled.")
         QMessageBox.critical(self, "Operation Interrupted", message)
 
     def _refresh_scan_table(self, *_args) -> None:
@@ -2281,6 +2889,8 @@ class MainWindow(QMainWindow):
                 self.alerts_table.setItem(row, column, item)
         self.alerts_table.setSortingEnabled(True)
 
+
+
     def _refresh_history_table(self, *_args) -> None:
         runs = self.database.fetch_scan_runs(limit=40)
         self.history_table.setSortingEnabled(False)
@@ -2298,7 +2908,7 @@ class MainWindow(QMainWindow):
             self.last_scan_label.setText(f"Last scan: {last.scan_type} | {last.target} | {last.created_at}")
         else:
             self.last_scan_label.setText("Last scan: no history available yet.")
-
+        self._update_change_summary_labels()
     def _refresh_events_table(self, *_args) -> None:
         events = self.database.fetch_event_logs(limit=60)
         self.events_table.setSortingEnabled(False)
@@ -2449,7 +3059,12 @@ class MainWindow(QMainWindow):
         self._update_header_branding()
         self.settings_status.setText("Logo selected. Remember to save the company profile.")
 
+
+
     def _save_ai_settings(self, *_args) -> None:
+        if not self._ensure_admin_access("AI Settings"):
+            return
+
         api_key = self.ai_api_key_input.text().strip()
         model = self.ai_model_input.text().strip() or "openai/gpt-4o-mini"
         mode = str(self.ai_mode_selector.currentData() or "scan-aware")
@@ -2462,7 +3077,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "ai_model_hint"):
             self.ai_model_hint.setText(f"Model: {model} | API key is managed in Settings.")
         self._log_event("AI", "Success", f"OpenRouter settings updated for model {model} in {mode} mode.")
-
+        self._show_toast("AI settings saved", "success")
     def _apply_ai_page_theme(self) -> None:
         if not hasattr(self, "ai_analyze_button"):
             return
@@ -2516,6 +3131,9 @@ class MainWindow(QMainWindow):
             self.ai_fix_first_button,
             self.ai_suspicious_host_button,
             self.ai_explain_score_button,
+            self.ai_explain_host_button,
+            self.ai_remediation_plan_button,
+            self.ai_summarize_changes_button,
             self.ai_close_port_button,
             self.ai_block_ip_button,
         ):
@@ -2526,6 +3144,7 @@ class MainWindow(QMainWindow):
             self.ai_context_ports,
             self.ai_context_score,
             self.ai_context_focus,
+            self.ai_context_changes,
         ):
             label.setStyleSheet(note_color)
         if hasattr(self, "ai_model_hint"):
@@ -2872,6 +3491,8 @@ class MainWindow(QMainWindow):
         wrapper = "<div style='padding:10px 6px 18px 6px;'>" + "".join(sections) + "</div>"
         self.ai_output.setHtml(wrapper)
 
+
+
     def _refresh_ai_context_panel(self) -> None:
         if not hasattr(self, "ai_summary_hosts"):
             return
@@ -2879,9 +3500,9 @@ class MainWindow(QMainWindow):
         host_count = len(self.devices)
         port_count = len(self._all_port_results())
         score = self.latest_assessment.score if hasattr(self, "latest_assessment") else 100
-        focus_ip = self._selected_ip_for_ai()
-        focus_ip = focus_ip or "No active host selected"
+        focus_ip = self._selected_ip_for_ai() or "No active host selected"
         _, port, service = self._selected_port_context()
+        comparison_summary = self._combined_change_summary()
 
         self.ai_summary_hosts.setText(
             f"<div style='font-size:11px; color:#cbd5e1;'>HOSTS</div><div style='font-size:22px; font-weight:800; color:white;'>{host_count}</div>"
@@ -2901,7 +3522,7 @@ class MainWindow(QMainWindow):
             self.ai_context_focus.setText(f"Current focus: {focus_ip} | selected port {port} ({service})")
         else:
             self.ai_context_focus.setText(f"Current focus: {focus_ip}")
-
+        self.ai_context_changes.setText(f"Latest comparison: {comparison_summary}")
     def _queue_ai_question(self, question: str, mode: str | None = None, auto_run: bool = True) -> None:
         if mode:
             self._set_ai_mode(mode)
@@ -2960,6 +3581,32 @@ class MainWindow(QMainWindow):
             "scan-aware",
         )
 
+
+
+    def _ask_ai_explain_selected_host(self, *_args) -> None:
+        ip_address = self._selected_ip_for_ai()
+        if ip_address:
+            self._queue_ai_question(
+                f"Explain the role, exposure, and hardening priorities for host {ip_address} based on the current scan.",
+                "scan-aware",
+            )
+            return
+        self._queue_ai_question(
+            "Explain the most important host in the current scan and why it matters.",
+            "scan-aware",
+        )
+
+    def _ask_ai_remediation_plan(self, *_args) -> None:
+        self._queue_ai_question(
+            "Create a prioritized remediation plan from the current scan with immediate, short-term, and follow-up actions.",
+            "scan-aware",
+        )
+
+    def _ask_ai_summarize_changes(self, *_args) -> None:
+        self._queue_ai_question(
+            "Summarize the latest changes between the current and previous scan results and explain why they matter.",
+            "scan-aware",
+        )
     def _ask_ai_close_selected_port(self, *_args) -> None:
         ip_address, port, service = self._selected_port_context()
         if port:
@@ -2987,6 +3634,8 @@ class MainWindow(QMainWindow):
             "general",
         )
 
+
+
     def _launch_ai_analysis(self, *_args) -> None:
         api_key = self.ai_api_key_input.text().strip()
         model = self.ai_model_input.text().strip() or "openai/gpt-4o-mini"
@@ -3000,6 +3649,13 @@ class MainWindow(QMainWindow):
         if mode == "scan-aware" and not self.devices and not self._all_port_results():
             QMessageBox.warning(self, "AI Assistant", "Run a network scan first so the AI has data to analyze.")
             return
+        if not question:
+            question = (
+                "Analyze this network and tell me the most important risks and next actions."
+                if mode == "scan-aware"
+                else "Provide defensive cybersecurity guidance for a network administrator."
+            )
+            self.ai_question_input.setPlainText(question)
 
         self.pending_ai_question = question
         self.pending_ai_mode = mode
@@ -3024,10 +3680,10 @@ class MainWindow(QMainWindow):
                 alerts,
                 self.database.fetch_company_profile(),
                 list(self.ai_chat_history[-8:]),
+                self._combined_change_summary(),
             ],
             self._handle_ai_analysis_result,
         )
-
     def _handle_ai_analysis_result(self, result: str) -> None:
         if self.pending_ai_question:
             self.ai_chat_history.append(
@@ -3054,13 +3710,24 @@ class MainWindow(QMainWindow):
         self.ai_status.setText("AI analysis completed successfully.")
         self._log_event("AI", "Success", "AI network analysis completed.")
 
+
+
+
     def _create_user(self, *_args) -> None:
+        if not self._ensure_admin_access("User Management"):
+            return
+
         username = self.new_username_input.text().strip()
         password = self.new_password_input.text()
         role = self.new_role_combo.currentText()
 
         if not username or not password:
             QMessageBox.warning(self, "User Management", "Username and password are required.")
+            return
+
+        password_errors = validate_password_policy(password)
+        if password_errors:
+            QMessageBox.warning(self, "User Management", "\n".join(password_errors))
             return
 
         try:
@@ -3074,9 +3741,13 @@ class MainWindow(QMainWindow):
         self.new_role_combo.setCurrentIndex(0)
         self.users_status.setText(f"User {username} was added successfully.")
         self._log_event("Users", "Success", f"User created: {username} ({role}).")
+        self._show_toast(f"User {username} created", "success")
         self._refresh_users_table()
 
     def _toggle_selected_user(self, *_args) -> None:
+        if not self._ensure_admin_access("User Management"):
+            return
+
         row = self.users_table.currentRow()
         if row < 0:
             QMessageBox.information(self, "User Management", "Select a user first.")
@@ -3098,7 +3769,49 @@ class MainWindow(QMainWindow):
         state_text = "enabled" if not currently_active else "disabled"
         self.users_status.setText(f"Account {username} is now {state_text}.")
         self._log_event("Users", "Info", f"Account state updated for {username}: {state_text}.")
+        self._show_toast(f"Account {username} {state_text}", "info")
         self._refresh_users_table()
+
+    def _change_selected_user_password(self, *_args) -> None:
+        if not self._ensure_admin_access("User Management"):
+            return
+
+        row = self.users_table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "User Management", "Select a user first.")
+            return
+
+        username_item = self.users_table.item(row, 1)
+        if username_item is None:
+            return
+
+        username = username_item.text().strip()
+        password = self.change_password_input.text()
+        confirmation = self.change_password_confirm_input.text()
+
+        if not password or not confirmation:
+            QMessageBox.warning(self, "User Management", "Enter and confirm the new password.")
+            return
+        if password != confirmation:
+            QMessageBox.warning(self, "User Management", "The new password confirmation does not match.")
+            return
+
+        password_errors = validate_password_policy(password)
+        if password_errors:
+            QMessageBox.warning(self, "User Management", "\n".join(password_errors))
+            return
+
+        try:
+            self.database.update_user_password(username, password)
+        except Exception as exc:
+            QMessageBox.warning(self, "User Management", f"Unable to change the password:\n{exc}")
+            return
+
+        self.change_password_input.clear()
+        self.change_password_confirm_input.clear()
+        self.users_status.setText(f"Password updated successfully for {username}.")
+        self._log_event("Users", "Success", f"Password updated for {username}.")
+        self._show_toast(f"Password updated for {username}", "success")
 
     def _refresh_reports_table(self) -> None:
         reports = self.database.fetch_reports(limit=20)
@@ -3112,7 +3825,6 @@ class MainWindow(QMainWindow):
                     item.setForeground(QColor(self._score_color(int(value))))
                 self.reports_table.setItem(row, column, item)
         self.reports_table.setSortingEnabled(True)
-
     def _refresh_topology(self, *_args) -> None:
         self.topology_widget.set_data(self.devices, self.port_results_by_ip)
         router_count = sum(1 for device in self.devices if device.device_type == "Router")
@@ -3129,7 +3841,7 @@ class MainWindow(QMainWindow):
         return results
 
     def _known_ips(self) -> set[str]:
-        return {device.ip_address for device in self.database.fetch_devices()}
+        return {device.ip_address for device in self.devices}
 
     def _persist_new_alerts(self, alerts: list[Alert]) -> None:
         new_alerts: list[Alert] = []
@@ -3187,6 +3899,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, "events_table"):
             self._refresh_events_table()
 
+
+
     def timerEvent(self, event) -> None:  # pragma: no cover
         if event.timerId() != self.monitor_timer:
             return
@@ -3216,17 +3930,29 @@ class MainWindow(QMainWindow):
             self._persist_new_alerts(alerts)
             self.monitor_alert_label.setText("High traffic spike detected")
             self.monitor_alert_label.setStyleSheet("color: #dc2626; font-weight: 700;")
+            if not self.traffic_spike_notified:
+                self._show_toast(
+                    f"High traffic spike detected: {self._format_speed(snapshot.total_bandwidth_bps)}",
+                    "critical",
+                )
+                self.traffic_spike_notified = True
         else:
             self.monitor_alert_label.setText("Traffic status normal.")
             self.monitor_alert_label.setStyleSheet("color: #16a34a; font-weight: 700;")
+            self.traffic_spike_notified = False
         self._recalculate_security()
-
     def resizeEvent(self, event) -> None:  # pragma: no cover
         super().resizeEvent(event)
         if hasattr(self, "toast_label") and self.toast_label.isVisible():
             self.toast_label.move(self.width() - self.toast_label.width() - 26, 24)
 
+
+
+
     def _save_settings(self, *_args) -> None:
+        if not self._ensure_admin_access("Settings"):
+            return
+
         company_values = {
             "company_name": self.company_name_input.text().strip(),
             "department": self.department_input.text().strip(),
@@ -3241,6 +3967,13 @@ class MainWindow(QMainWindow):
         if any(not company_values[key] for key in required_fields):
             QMessageBox.warning(self, "Settings", "Please fill in the required company fields.")
             return
+
+        auto_scan_enabled = self.auto_scan_enabled_checkbox.isChecked()
+        auto_scan_interval_value = self.auto_scan_interval_spinbox.value()
+        auto_scan_interval_unit = str(self.auto_scan_interval_unit_combo.currentData() or "minutes")
+        auto_scan_mode = str(self.auto_scan_mode_combo.currentData() or "quick")
+        auto_report_enabled = self.auto_report_checkbox.isChecked()
+        auto_snapshot_enabled = self.auto_snapshot_checkbox.isChecked()
 
         try:
             bandwidth_mb = float(self.bandwidth_threshold_input.text().strip())
@@ -3266,25 +3999,48 @@ class MainWindow(QMainWindow):
         self.database.set_setting("bandwidth_alert_threshold_bps", str(int(bandwidth_mb * 1024 * 1024)))
         self.database.set_setting("managed_hosts_limit", str(managed_hosts))
         self.database.set_setting("large_network_threshold", str(large_network))
-        self._load_settings_values()
+        self.database.set_setting("auto_scan_enabled", "1" if auto_scan_enabled else "0")
+        self.database.set_setting("auto_scan_interval_value", str(auto_scan_interval_value))
+        self.database.set_setting("auto_scan_interval_unit", auto_scan_interval_unit)
+        self.database.set_setting("auto_scan_mode", auto_scan_mode)
+        self.database.set_setting("scheduled_report_enabled", "1" if auto_report_enabled else "0")
+        self.database.set_setting("scheduled_snapshot_enabled", "1" if auto_snapshot_enabled else "0")
+        self.auto_report_enabled = auto_report_enabled
+        self.auto_snapshot_export_enabled = auto_snapshot_enabled
+
+        self._load_settings_values(apply_auto_scan=True)
         self._update_header_branding()
         self._recalculate_security()
-        self.settings_status.setText("Company profile and thresholds saved successfully.")
+
+        auto_scan_summary = (
+            f"Auto scan {'enabled' if auto_scan_enabled else 'disabled'} | "
+            f"every {auto_scan_interval_value} {auto_scan_interval_unit} | mode={auto_scan_mode}."
+        )
+        artifact_summary = (
+            f"Scheduled PDF reports={'on' if auto_report_enabled else 'off'} | "
+            f"JSON snapshots={'on' if auto_snapshot_enabled else 'off'}."
+        )
+        self.settings_status.setText("Company profile, thresholds, and automation settings saved successfully.")
         self._log_event(
             "Settings",
             "Success",
             (
                 f"Company profile updated for {company_values['company_name']} | "
-                f"traffic threshold={bandwidth_mb:.2f} MB/s, managed hosts={managed_hosts}, large network={large_network}."
+                f"traffic threshold={bandwidth_mb:.2f} MB/s, managed hosts={managed_hosts}, large network={large_network} | "
+                f"{auto_scan_summary} {artifact_summary}"
             ),
         )
-        QMessageBox.information(self, "Settings", "The company profile and settings have been saved.")
+        self._show_toast("Settings saved successfully", "success")
+        QMessageBox.information(
+            self,
+            "Settings",
+            f"The company profile and settings have been saved.\n\n{auto_scan_summary}\n{artifact_summary}",
+        )
 
     def _export_devices_csv(self, *_args) -> None:
         path = self.exporter.export_devices(self.devices)
         self.scan_status.setText(f"CSV export generated: {path}")
         self._log_event("Export", "Success", f"Device CSV export generated: {path.name}.")
-
     def _export_ports_csv(self, *_args) -> None:
         path = self.exporter.export_ports(self._all_port_results())
         self.port_status.setText(f"CSV export generated: {path}")

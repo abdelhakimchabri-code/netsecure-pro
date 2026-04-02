@@ -43,12 +43,13 @@ class ReportGenerator:
         assessment: SecurityAssessment,
         alerts: list[Alert],
         company_profile: dict[str, str] | None = None,
+        comparison_summary: str = "",
     ) -> Path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         company_name = (company_profile or {}).get("company_name", "netsecure").strip().lower().replace(" ", "_")
         safe_company = "".join(character for character in company_name if character.isalnum() or character == "_") or "netsecure"
         pdf_path = self.output_dir / f"{safe_company}_report_{timestamp}.pdf"
-        page_streams = self._build_pages(devices, port_results, assessment, alerts, company_profile or {})
+        page_streams = self._build_pages(devices, port_results, assessment, alerts, company_profile or {}, comparison_summary)
         self._write_pdf(pdf_path, page_streams)
         return pdf_path
 
@@ -59,6 +60,7 @@ class ReportGenerator:
         assessment: SecurityAssessment,
         alerts: list[Alert],
         company_profile: dict[str, str],
+        comparison_summary: str,
     ) -> list[bytes]:
         company_name = company_profile.get("company_name", "NetSecure Pro")
         department = company_profile.get("department", "Security Operations Center")
@@ -99,6 +101,7 @@ class ReportGenerator:
             insight=insight,
             findings=findings,
             recommendations=recommendations,
+            comparison_summary=comparison_summary,
         )
 
         pages.append(self._new_page(2, company_name))
@@ -201,6 +204,7 @@ class ReportGenerator:
         insight: str,
         findings: list[str],
         recommendations: list[str],
+        comparison_summary: str,
     ) -> None:
         self._rect(page, self.MARGIN_X, 660.0, self.CONTENT_WIDTH, 142.0, fill=self.COLORS["navy"])
         self._rect(page, 414.0, 682.0, 120.0, 96.0, fill=self.COLORS["navy_soft"], stroke=(0.20, 0.42, 0.49))
@@ -222,7 +226,11 @@ class ReportGenerator:
         self._text(page, 474.0, 728.0, assessment.label, font="F2", size=12.5, color=score_color, align="center")
         self._text(page, 474.0, 698.0, f"{assessment.score}/100", font="F2", size=24.0, color=self.COLORS["white"], align="center")
         self._metric_row(page, metrics, top_y=560.0)
-        self._panel(page, self.MARGIN_X, 430.0, self.CONTENT_WIDTH, 108.0, "Executive Summary", [insight, f"Support: {support_email}", f"Contact: {support_phone}"])
+        executive_lines = [insight]
+        if comparison_summary:
+            executive_lines.append(f"Recent change summary: {comparison_summary}")
+        executive_lines.extend([f"Support: {support_email}", f"Contact: {support_phone}"])
+        self._panel(page, self.MARGIN_X, 430.0, self.CONTENT_WIDTH, 108.0, "Executive Summary", executive_lines)
         half_width = (self.CONTENT_WIDTH - 15.0) / 2.0
         self._panel(page, self.MARGIN_X, 302.0, half_width, 110.0, "Key Findings", findings, compact=True)
         self._panel(page, self.MARGIN_X + half_width + 15.0, 302.0, half_width, 110.0, "Priority Actions", recommendations, compact=True)

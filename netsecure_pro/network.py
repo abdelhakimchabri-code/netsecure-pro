@@ -19,6 +19,20 @@ SCAN_MODES = {
     "balanced": {"ping_timeout_ms": 400, "tcp_ports": TCP_DISCOVERY_PORTS, "tcp_timeout": 0.22},
     "deep": {"ping_timeout_ms": 650, "tcp_ports": TCP_DISCOVERY_PORTS, "tcp_timeout": 0.35},
 }
+VIRTUAL_INTERFACE_KEYWORDS = (
+    "virtual",
+    "vbox",
+    "vmware",
+    "hyper-v",
+    "loopback",
+    "wi-fi direct",
+    "bluetooth",
+    "host-only",
+    "tunnel",
+    "vethernet",
+    "wsl",
+)
+
 OUI_VENDOR_MAP = {
     "00-0C-29": "VMware",
     "00-50-56": "VMware",
@@ -48,21 +62,104 @@ OUI_VENDOR_MAP = {
 
 class NetworkScanner:
     def suggest_target(self) -> str:
-        for addresses in psutil.net_if_addrs().values():
+        candidates = self._interface_candidates()
+        preferred_ip = self._default_route_interface_ip()
+
+        if preferred_ip:
+            for candidate in candidates:
+                if candidate["ip"] == preferred_ip:
+                    return str(candidate["network"])
+
+        if candidates:
+            return str(candidates[0]["network"])
+        return "192.168.1.0/24"
+
+    def _default_route_interface_ip(self) -> str | None:
+        completed = subprocess.run(
+            ["route", "print", "-4"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return None
+
+        best_metric: int | None = None
+        preferred_ip: str | None = None
+        for raw_line in completed.stdout.splitlines():
+            parts = raw_line.split()
+            if len(parts) < 5:
+                continue
+            if parts[0] != "0.0.0.0" or parts[1] != "0.0.0.0":
+                continue
+
+            interface_ip = parts[3]
+            if interface_ip.startswith("127.") or interface_ip.startswith("169.254."):
+                continue
+
+            try:
+                metric = int(parts[4])
+            except ValueError:
+                metric = 10_000
+
+            if best_metric is None or metric < best_metric:
+                best_metric = metric
+                preferred_ip = interface_ip
+        return preferred_ip
+
+    def _interface_candidates(self) -> list[dict[str, object]]:
+        stats = psutil.net_if_stats()
+        candidates: list[dict[str, object]] = []
+
+        for name, addresses in psutil.net_if_addrs().items():
+            stat = stats.get(name)
+            lowered_name = name.lower()
+            is_virtual = self._is_virtual_interface(name)
+
             for address in addresses:
                 if getattr(address, "family", None) != socket.AF_INET:
                     continue
+
                 ip = address.address
                 netmask = address.netmask
-                if not ip or ip.startswith("127.") or not netmask:
+                if not ip or ip.startswith("127.") or ip.startswith("169.254.") or not netmask:
                     continue
+
                 try:
                     network = ipaddress.ip_network(f"{ip}/{netmask}", strict=False)
                 except ValueError:
                     continue
-                if network.is_private:
-                    return str(network)
-        return "192.168.1.0/24"
+
+                if not network.is_private:
+                    continue
+
+                score = 0
+                if stat and stat.isup:
+                    score += 100
+                if not is_virtual:
+                    score += 50
+                if any(token in lowered_name for token in ("wi-fi", "wifi", "wireless")):
+                    score += 20
+                if any(token in lowered_name for token in ("ethernet", "lan")):
+                    score += 20
+                if network.prefixlen >= 24:
+                    score += 5
+
+                candidates.append(
+                    {
+                        "name": name,
+                        "ip": ip,
+                        "network": network,
+                        "score": score,
+                    }
+                )
+
+        candidates.sort(key=lambda item: int(item["score"]), reverse=True)
+        return candidates
+
+    def _is_virtual_interface(self, name: str) -> bool:
+        lowered_name = name.lower()
+        return any(keyword in lowered_name for keyword in VIRTUAL_INTERFACE_KEYWORDS)
 
     def scan(self, target: str, mode: str = "balanced", progress_callback=None, should_cancel=None) -> list[Device]:
         hosts = self._expand_hosts(target)

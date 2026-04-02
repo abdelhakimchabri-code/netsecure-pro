@@ -11,3 +11,5 @@ reports/
 Thumbs.db
 .vscode/
 .idea/
+build/
+dist/

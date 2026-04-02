@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from .models import Alert, Device, MonitoringSnapshot, PortScanResult, SecurityAssessment, SecuritySettings
 
@@ -17,6 +17,8 @@ class SecurityAnalyzer:
         recommendations: list[str] = []
         risk_factors: list[str] = []
 
+        port_map = self._port_map(port_results)
+        device_map = {device.ip_address: device for device in devices}
         unknown_devices = [device for device in devices if not device.is_known]
         dangerous_ports = [result for result in port_results if result.port in {23, 445, 3389}]
         insecure_services = [
@@ -24,23 +26,69 @@ class SecurityAnalyzer:
         ]
         host_count = len(devices)
 
+        router_telnet_hosts = [
+            ip_address
+            for ip_address, results in port_map.items()
+            if device_map.get(ip_address, Device(ip_address, "", "")).device_type == "Router"
+            and any(result.port == 23 or result.service == "Telnet" for result in results)
+        ]
+        exposed_admin_hosts = [
+            ip_address
+            for ip_address, results in port_map.items()
+            if {445, 3389}.issubset({result.port for result in results})
+        ]
+        plaintext_web_hosts = [
+            ip_address
+            for ip_address, results in port_map.items()
+            if 80 in {result.port for result in results} and 443 not in {result.port for result in results}
+        ]
+        unknown_high_risk_hosts = [
+            device.ip_address
+            for device in unknown_devices
+            if any(result.risk_level in {"Critical", "High"} for result in port_map.get(device.ip_address, []))
+        ]
+
         if dangerous_ports:
             score -= min(40, len(dangerous_ports) * 10)
             risk_factors.append(f"{len(dangerous_ports)} high-risk port(s) exposed")
             observations.append("High-risk ports were detected on the network.")
-            recommendations.append("Close or filter unnecessary RDP, SMB, and Telnet services.")
+            self._append_unique(recommendations, "Close or filter unnecessary RDP, SMB, and Telnet services.")
 
         if insecure_services:
             score -= min(30, len(insecure_services) * 8)
             risk_factors.append(f"{len(insecure_services)} insecure service(s) detected")
             observations.append("Services using weak protocols are still active.")
-            recommendations.append("Replace weak protocols with encrypted alternatives.")
+            self._append_unique(recommendations, "Replace weak protocols with encrypted alternatives.")
+
+        if router_telnet_hosts:
+            score -= min(25, 12 + (len(router_telnet_hosts) * 4))
+            risk_factors.append(f"Router management over Telnet detected on {len(router_telnet_hosts)} host(s)")
+            observations.append("At least one router exposes Telnet for remote administration.")
+            self._append_unique(recommendations, "Disable Telnet on routers and use encrypted administration channels such as HTTPS or SSH.")
+
+        if exposed_admin_hosts:
+            score -= min(24, 10 + (len(exposed_admin_hosts) * 4))
+            risk_factors.append(f"Windows administrative exposure detected on {len(exposed_admin_hosts)} host(s)")
+            observations.append("Some hosts expose SMB and RDP together, which increases administrative attack surface.")
+            self._append_unique(recommendations, "Restrict SMB and RDP exposure to trusted admin segments or VPN access only.")
+
+        if plaintext_web_hosts:
+            score -= min(12, len(plaintext_web_hosts) * 3)
+            risk_factors.append(f"Unencrypted web management detected on {len(plaintext_web_hosts)} host(s)")
+            observations.append("HTTP is exposed without a matching HTTPS service on one or more hosts.")
+            self._append_unique(recommendations, "Enable HTTPS for administrative web services and disable plain HTTP when possible.")
 
         if unknown_devices:
             score -= min(20, len(unknown_devices) * 5)
             risk_factors.append(f"{len(unknown_devices)} unknown device(s)")
             observations.append("Some devices could not be clearly identified.")
-            recommendations.append("Review unknown devices and update the network inventory.")
+            self._append_unique(recommendations, "Review unknown devices and update the network inventory.")
+
+        if unknown_high_risk_hosts:
+            score -= min(18, 6 + (len(unknown_high_risk_hosts) * 4))
+            risk_factors.append(f"Unknown devices with high-risk exposure detected on {len(unknown_high_risk_hosts)} host(s)")
+            observations.append("At least one unknown device exposes high-risk services or ports.")
+            self._append_unique(recommendations, "Isolate or inspect unknown devices that expose critical or high-risk services.")
 
         if monitoring_snapshot and monitoring_snapshot.total_bandwidth_bps > settings.bandwidth_alert_threshold_bps:
             overload_ratio = monitoring_snapshot.total_bandwidth_bps / max(settings.bandwidth_alert_threshold_bps, 1)
@@ -54,7 +102,7 @@ class SecurityAnalyzer:
                 "Current network traffic exceeds the configured critical threshold "
                 f"({settings.bandwidth_alert_threshold_bps / (1024 * 1024):.2f} MB/s)."
             )
-            recommendations.append("Monitor traffic spikes and verify unexpected flows.")
+            self._append_unique(recommendations, "Monitor traffic spikes and verify unexpected flows.")
 
         if 1 <= host_count <= settings.managed_hosts_limit:
             score += 10
@@ -69,12 +117,8 @@ class SecurityAnalyzer:
                 "The number of hosts exceeds the managed limit "
                 f"({host_count}>{settings.managed_hosts_limit})"
             )
-            observations.append(
-                "The network contains more devices than the managed limit defined in the settings."
-            )
-            recommendations.append(
-                "Verify that all detected devices are expected, or raise the managed network limit."
-            )
+            observations.append("The network contains more devices than the managed limit defined in the settings.")
+            self._append_unique(recommendations, "Verify that all detected devices are expected, or raise the managed network limit.")
         elif host_count > settings.large_network_threshold:
             overflow = host_count - settings.large_network_threshold
             score -= min(30, 14 + overflow)
@@ -83,9 +127,7 @@ class SecurityAnalyzer:
                 f"({host_count}>{settings.large_network_threshold})"
             )
             observations.append("The network exceeded the configured large-network threshold.")
-            recommendations.append(
-                "Segment the network, review the inventory, and adjust the large-network threshold if needed."
-            )
+            self._append_unique(recommendations, "Segment the network, review the inventory, and adjust the large-network threshold if needed.")
 
         if devices:
             score += 5
@@ -125,6 +167,8 @@ class SecurityAnalyzer:
         known_ips = known_ips or set()
         settings = settings or SecuritySettings()
         host_count = len(devices)
+        port_map = self._port_map(port_results)
+        device_map = {device.ip_address: device for device in devices}
 
         for device in devices:
             if device.ip_address not in known_ips:
@@ -170,6 +214,42 @@ class SecurityAnalyzer:
                     )
                 )
 
+        for ip_address, results in port_map.items():
+            ports = {result.port for result in results}
+            device = device_map.get(ip_address)
+            if device and device.device_type == "Router" and 23 in ports:
+                alerts.append(
+                    Alert(
+                        type_alert="Insecure Router Management",
+                        description=f"Router {ip_address} exposes Telnet remote administration.",
+                        severity="Critical",
+                    )
+                )
+            if {445, 3389}.issubset(ports):
+                alerts.append(
+                    Alert(
+                        type_alert="Exposed Admin Surface",
+                        description=f"Host {ip_address} exposes SMB and RDP together.",
+                        severity="High",
+                    )
+                )
+            if 80 in ports and 443 not in ports:
+                alerts.append(
+                    Alert(
+                        type_alert="Unencrypted Web Service",
+                        description=f"Host {ip_address} exposes HTTP without HTTPS.",
+                        severity="Medium",
+                    )
+                )
+            if device and not device.is_known and any(result.risk_level in {"Critical", "High"} for result in results):
+                alerts.append(
+                    Alert(
+                        type_alert="Unknown High-Risk Device",
+                        description=f"Unknown host {ip_address} exposes high-risk services.",
+                        severity="High",
+                    )
+                )
+
         if settings.managed_hosts_limit < host_count <= settings.large_network_threshold:
             alerts.append(
                 Alert(
@@ -209,3 +289,13 @@ class SecurityAnalyzer:
             )
 
         return alerts
+
+    def _append_unique(self, items: list[str], value: str) -> None:
+        if value not in items:
+            items.append(value)
+
+    def _port_map(self, port_results: list[PortScanResult]) -> dict[str, list[PortScanResult]]:
+        mapping: dict[str, list[PortScanResult]] = {}
+        for result in port_results:
+            mapping.setdefault(result.device_ip, []).append(result)
+        return mapping
