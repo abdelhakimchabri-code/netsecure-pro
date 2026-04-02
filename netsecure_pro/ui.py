@@ -252,7 +252,7 @@ class WorkerThread(QThread):
     def run(self) -> None:
         try:
             result = self.callback(*self.args)
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:  
             self.error.emit(str(exc))
         else:
             self.result_ready.emit(result)
@@ -280,7 +280,7 @@ class NetworkScanThread(QThread):
     def run(self) -> None:
         try:
             result = self.scanner.scan(self.target, self.mode, self.progress.emit, self._is_cancel_requested)
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:  
             self.error.emit(str(exc))
         else:
             if self._cancel_requested:
@@ -319,7 +319,7 @@ class PortScanThread(QThread):
                 self.progress.emit,
                 self._is_cancel_requested,
             )
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:  
             self.error.emit(str(exc))
         else:
             if self._cancel_requested:
@@ -372,12 +372,12 @@ class MetricCard(QFrame):
         layout.addStretch(1)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-    def enterEvent(self, event) -> None:  # pragma: no cover
+    def enterEvent(self, event) -> None:  
         self._shadow.setBlurRadius(28)
         self._shadow.setOffset(0, 10)
         super().enterEvent(event)
 
-    def leaveEvent(self, event) -> None:  # pragma: no cover
+    def leaveEvent(self, event) -> None:  
         self._shadow.setBlurRadius(22)
         self._shadow.setOffset(0, 8)
         super().leaveEvent(event)
@@ -403,7 +403,7 @@ class TrafficChartWidget(QFrame):
         self.theme = theme
         self.update()
 
-    def paintEvent(self, event) -> None:  # pragma: no cover
+    def paintEvent(self, event) -> None:  
         super().paintEvent(event)
         if not self.history:
             return
@@ -485,7 +485,7 @@ class TopologyWidget(QFrame):
         self.theme = theme
         self.update()
 
-    def paintEvent(self, event) -> None:  # pragma: no cover
+    def paintEvent(self, event) -> None:  
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -587,7 +587,7 @@ class TopologyWidget(QFrame):
             f"Risk: {highest_risk}"
         )
 
-    def mouseMoveEvent(self, event) -> None:  # pragma: no cover
+    def mouseMoveEvent(self, event) -> None:  
         position = event.position()
         for rect, tooltip in self._node_regions:
             if rect.contains(position.x(), position.y()):
@@ -3901,7 +3901,7 @@ class MainWindow(QMainWindow):
 
 
 
-    def timerEvent(self, event) -> None:  # pragma: no cover
+    def timerEvent(self, event) -> None:  
         if event.timerId() != self.monitor_timer:
             return
         interface = self.interface_selector.currentText()
@@ -3941,7 +3941,7 @@ class MainWindow(QMainWindow):
             self.monitor_alert_label.setStyleSheet("color: #16a34a; font-weight: 700;")
             self.traffic_spike_notified = False
         self._recalculate_security()
-    def resizeEvent(self, event) -> None:  # pragma: no cover
+    def resizeEvent(self, event) -> None:  
         super().resizeEvent(event)
         if hasattr(self, "toast_label") and self.toast_label.isVisible():
             self.toast_label.move(self.width() - self.toast_label.width() - 26, 24)
